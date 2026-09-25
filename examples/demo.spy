@@ -1,0 +1,11 @@
+# pycli Demo Script (.spy)
+
+branch = $(git branch --show-current)
+$(echo Active branch is: {branch.stdout.strip()})
+
+files = ["pyproject.toml", "README.md"]
+res = $(python -c "import sys; print('Inspecting files:', *sys.argv[1:])" {*files})
+print(res.stdout.strip())
+
+if $(python -c "import sys; sys.exit(0)"):
+    print("Execution check passed successfully!")

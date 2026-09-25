@@ -1,0 +1,117 @@
+"""
+Complex DevOps Pipeline Orchestrator Demo in pycli (.spy).
+
+Demonstrates:
+- Python standard library imports
+- Custom dataclasses and classes
+- Methods executing inline CLI commands
+- String interpolation with method calls and object properties
+- Splat expansion {*args}
+- Dynamic JSON navigation (.json)
+- Strict mode $(...)! with try/except CommandError
+- Truthiness evaluation in conditionals
+"""
+
+import json
+import os
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List
+
+from pycli.runtime import CommandError
+
+
+@dataclass
+class ServiceSpec:
+    name: str
+    port: int
+    replicas: int
+    tags: List[str] = field(default_factory=list)
+
+    def describe(self) -> str:
+        return f"{self.name} (port {self.port}, replicas: {self.replicas})"
+
+
+class DeploymentManager:
+    """Manages deployment workflows using embedded shell interactions."""
+
+    def __init__(self, environment: str = "staging") -> None:
+        self.environment = environment
+        self.log_dir = Path("./build_logs")
+
+    def initialize_workspace(self) -> None:
+        """Create workspace directory and inspect environment."""
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+        res = $(echo Initializing deployment pipeline for environment: {self.environment})
+        print(res.stdout.strip())
+
+    def run_health_checks(self) -> bool:
+        """Verify repository and environment health using truthiness checks."""
+        # Check git repository validity with truthiness
+        if $(git rev-parse --is-inside-work-tree):
+            branch_info = $(git branch --show-current).stdout.strip() or "master"
+            commit_res = $(git rev-parse --short HEAD)
+            commit_hash = commit_res.stdout.strip() if commit_res else "initial"
+            print(f"Git repository verified at branch: {branch_info} [{commit_hash}]")
+            return True
+        else:
+            print("Warning: Not running inside a valid git repository")
+            return False
+
+    def deploy_services(self, specs: List[ServiceSpec]) -> List[str]:
+        """Deploy multiple service specifications using dynamic JSON generation and splat."""
+        deployed: List[str] = []
+
+        for spec in specs:
+            $(echo --- Deploying {spec.describe()} ---)
+
+            # Subprocess CLI outputs structured JSON to stdout
+            result = $(python -c "import json, sys; print(json.dumps(dict(service=sys.argv[1], cluster_ip='10.0.' + sys.argv[2] + '.1', details=dict(health='UP', replicas_running=int(sys.argv[3])))))" {spec.name} {spec.port} {spec.replicas}).json
+
+            print(f"Service IP: {result.cluster_ip} | Health: {result.details.health} (Replicas: {result.details.replicas_running})")
+            deployed.append(result.service)
+
+        return deployed
+
+    def clean_temporary_files(self, file_patterns: List[str]) -> None:
+        """Demonstrate splat list expansion {*patterns}."""
+        $(echo Cleaning artifacts matching: {*file_patterns})
+        cmd_result = $(python -c "import sys; print('Validated args count:', len(sys.argv[1:]))" {*file_patterns})
+        print(cmd_result.stdout.strip())
+
+    def test_strict_mode_handling(self) -> None:
+        """Demonstrate strict mode execution $(...)! and error trapping."""
+        print("Testing strict mode execution with expected failure...")
+        try:
+            # Non-zero exit code with ! raises CommandError
+            $(python -c "import sys; sys.stderr.write('Simulated failure'); sys.exit(42)")!
+        except CommandError as err:
+            print(f"Successfully caught CommandError with code {err.result.exit_code}: {err.result.stderr.strip()}")
+
+
+def main():
+    manager = DeploymentManager(environment="production")
+    manager.initialize_workspace()
+
+    healthy = manager.run_health_checks()
+    if not healthy:
+        print("Health checks failed!")
+
+    services = [
+        ServiceSpec(name="auth-api", port=8080, replicas=3, tags=["security", "v2"]),
+        ServiceSpec(name="payment-worker", port=9090, replicas=2, tags=["finance"]),
+    ]
+
+    deployed = manager.deploy_services(services)
+    print(f"Successfully deployed {len(deployed)} services: {', '.join(deployed)}")
+
+    cleanup_files = ["temp_cache.tmp", "session_99.bak", "debug.log"]
+    manager.clean_temporary_files(cleanup_files)
+
+    manager.test_strict_mode_handling()
+    print("DevOps Pipeline completed successfully!")
+
+
+if __name__ == "__main__":
+    main()
