@@ -1,0 +1,94 @@
+# examples/advanced_features.spy
+# Dimostrazione di tutte le 8 feature avanzate introdotte in spy
+
+import sys
+import tempfile
+from pathlib import Path
+
+py = sys.executable
+
+print("=== 1. Iterazione sull'output e streaming di linee ===")
+# Iterazione diretta sul CommandResult:
+cmd_iter = $({py} -c "print('Line Alpha'); print('Line Beta'); print('Line Gamma')")
+for i, line in enumerate(cmd_iter):
+    print(f"  [{i+1}] {line}")
+
+# Accesso comodo a .lines e .text:
+print(f"Totale linee: {len(cmd_iter.lines)}")
+print(f"Testo pulito (.text): {repr(cmd_iter.text)}")
+
+
+print("\n=== 2. Live output streaming con cattura (.tee) ===")
+# Stampa a video in tempo reale durante l'esecuzione e cattura l'output in res:
+res_tee = $({py} -c "import time; print('Avvio step 1...'); time.sleep(0.1); print('Completato step 2!')").tee
+print(f"Output catturato dopo tee: {res_tee.stdout.strip()}")
+
+
+print("\n=== 3. Piping di dati nello stdin (.input(...)) ===")
+manifest_yaml = """service: frontend
+replicas: 3
+env: production"""
+# Invia la stringa come standard input al processo:
+res_input = $({py} -c "import sys; print('Ricevuti byte stdin:', len(sys.stdin.read()))").input(manifest_yaml)
+print(f"  {res_input.stdout.strip()}")
+
+
+print("\n=== 4. Context Managers: cd() ed env() ===")
+temp_dir = tempfile.mkdtemp()
+print(f"Cartella temporanea: {temp_dir}")
+
+# Cambio di directory temporaneo:
+with cd(temp_dir):
+    $({py} -c "with open('created_inside_cd.txt', 'w') as f: f.write('OK')")
+    assert Path("created_inside_cd.txt").exists()
+    print("  File creato correttamente nella directory target di cd()!")
+
+assert not Path("created_inside_cd.txt").exists()
+print("  Rientrati nella cartella originale con successo!")
+
+# Variabili d'ambiente temporanee:
+with env(DEPLOY_STAGE="staging", FEATURE_FLAG="on"):
+    res_env = $({py} -c "import os; print('STAGE:', os.environ.get('DEPLOY_STAGE'), 'FLAG:', os.environ.get('FEATURE_FLAG'))")
+    print(f"  Dentro with env(): {res_env.stdout.strip()}")
+
+print(f"  Fuori da with env(): DEPLOY_STAGE={sys.modules['os'].getenv('DEPLOY_STAGE')}")
+
+
+print("\n=== 5. Semantica di interpolazione tra doppi apici e singoli apici ===")
+cluster_name = "prod-eu-west-1"
+
+# Doppi apici: consentono l'interpolazione di {espressione}
+res_double = $(echo "Deploying to cluster: {cluster_name}")
+print(f"  Doppi apici: {res_double.stdout.strip()}")
+
+# Singoli apici: rimangono rigorosamente letterali (nessuna espansione f-string)
+res_single = $(echo 'Literal template: {cluster_name}')
+print(f"  Singoli apici: {res_single.stdout.strip()}")
+
+
+print("\n=== 6. Esecuzione in background e concorrenza ($(...) &) ===")
+# Il modificatore & avvia il comando in un processo separato non bloccante:
+print("  Avvio job in background...")
+job = $({py} -c "import time; time.sleep(0.3); print('Background worker completato!')") &
+
+print(f"  Job in esecuzione? {job.is_running}")
+print("  (Nel frattempo il thread principale può continuare altre elaborazioni...)")
+
+# Attesa del completamento:
+bg_res = job.wait()
+print(f"  Job terminato con exit_code={bg_res.exit_code}: {bg_res.stdout.strip()}")
+
+
+print("\n=== 7. Modificatore di esecuzione sicura ($(...)?) ===")
+# Il modificatore ? sopprime l'eccezione su errore (suppress_errors=True):
+# Utile per probe, query opzionali o controlli preliminari
+probe = $({py} -c "import sys; sys.exit(42)")?
+print(f"  Comando fallito eseguito in sicurezza! exit_code={probe.exit_code} (nessuna eccezione sollevata)")
+
+
+print("\n=== 8. REPL Interattivo ===")
+print("  Per lanciare la shell interattiva di spy con transpilation on-the-fly:")
+print("  $ spy repl")
+print("  oppure digitando semplicemente 'spy' nel terminale senza argomenti.")
+
+print("\nAll features demonstrated successfully!")

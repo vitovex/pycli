@@ -1,0 +1,48 @@
+# devops_utils.spy - Reusable DevOps Helper Library
+"""A reusable pycli module that can be imported by other .spy or .py files."""
+
+from dataclasses import dataclass
+
+
+@dataclass
+class SystemInfo:
+    branch: str
+    commit_count: int
+    uv_version: str
+    git_available: bool
+
+
+def get_git_branch() -> str:
+    """Retrieve the current active git branch name."""
+    res = $(git branch --show-current)
+    return res.stdout.strip() if res.exit_code == 0 else "unknown"
+
+
+def get_git_commit_count() -> int:
+    """Count the total commits on the current branch."""
+    res = $(git rev-list --count HEAD)
+    if res.exit_code == 0 and res.stdout.strip().isdigit():
+        return int(res.stdout.strip())
+    return 0
+
+
+def get_uv_version() -> str:
+    """Retrieve the uv version string."""
+    res = $(uv --version)
+    return res.stdout.strip() if res.exit_code == 0 else "unknown"
+
+
+def check_command_available(tool_name: str) -> bool:
+    """Check if a tool is runnable."""
+    res = $({tool_name} --version)
+    return res.exit_code == 0
+
+
+def collect_system_info() -> SystemInfo:
+    """Collect system and repository diagnostics into a structured dataclass."""
+    return SystemInfo(
+        branch=get_git_branch(),
+        commit_count=get_git_commit_count(),
+        uv_version=get_uv_version(),
+        git_available=check_command_available("git"),
+    )

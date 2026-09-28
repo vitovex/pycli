@@ -1,5 +1,5 @@
 # pycli Demo Script (.spy)
-$(echo 21)
+$(echo diggiotto)
 branch = $(git branch --show-current)
 $(echo 'Active branch is: {branch.stdout.strip()}')
 #print(branch.stdout.strip())
@@ -9,4 +9,5 @@ print(res.stdout.strip())
 
 if $(python -c "import sys; sys.exit(0)"):
     print("Execution check passed successfully!")
+
 

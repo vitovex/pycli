@@ -6,6 +6,17 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
+import ast
+import re
+
+def is_valid_interpolation_expr(expr: str) -> bool:
+    try:
+        p = ast.parse(expr.strip(), mode="eval")
+        return not isinstance(p.body, ast.Dict)
+    except Exception:
+        return False
+
+
 class ParseError(Exception):
     """Raised when parsing fails."""
 
@@ -85,6 +96,8 @@ class PipelineNode(ASTNode):
 class CommandExpressionNode(ASTNode):
     pipeline: PipelineNode
     strict: bool = False
+    safe: bool = False
+    background: bool = False
     raw: str = ""
 
 
@@ -96,9 +109,17 @@ class CommandExpressionNode(ASTNode):
 class CommandParser:
     """Parses the content of $(...) into a CommandExpressionNode AST."""
 
-    def __init__(self, raw: str, strict: bool = False) -> None:
+    def __init__(
+        self,
+        raw: str,
+        strict: bool = False,
+        safe: bool = False,
+        background: bool = False,
+    ) -> None:
         self.raw = raw.strip()
         self.strict = strict
+        self.safe = safe
+        self.background = background
         self.pos = 0
         self.length = len(self.raw)
 
@@ -107,8 +128,11 @@ class CommandParser:
         return CommandExpressionNode(
             pipeline=pipeline,
             strict=self.strict,
+            safe=self.safe,
+            background=self.background,
             raw=self.raw,
         )
+
 
     def _parse_pipeline(self) -> PipelineNode:
         # Split by '|' outside quotes, braces, and subcommands
@@ -285,8 +309,16 @@ class CommandParser:
                     else:
                         buf.append(c)
                         i += 1
-                parts.append(StringNode(value="".join(buf), quote=q))
+                str_val = "".join(buf)
+                parts.append(StringNode(value=str_val, quote=q))
+                # Double-quoted strings allow {expression} interpolation
+                if q == '"' and "{" in str_val and "}" in str_val:
+                    for m in re.finditer(r"\{([^{}]+)\}", str_val):
+                        if is_valid_interpolation_expr(m.group(1)):
+                            parts.append(InterpolationNode(expression=m.group(1)))
+                            break
                 continue
+
 
             # Word / token
             start = i

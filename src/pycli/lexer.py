@@ -18,7 +18,10 @@ class Token:
     value: str
     line: int
     column: int
-    strict: bool = False  # True if followed by '!'
+    strict: bool = False      # True if followed by '!'
+    safe: bool = False        # True if followed by '?'
+    background: bool = False  # True if followed by '&'
+
 
 
 class LexerError(Exception):
@@ -222,11 +225,33 @@ class Lexer:
         if depth != 0:
             raise LexerError("Unclosed command expression '$('", cmd_line, cmd_col)
 
-        # Check for strict mode '!'
+        # Check for modifier suffix after ')':
+        # '!' -> strict mode
+        # '?' -> safe mode (suppress errors)
+        # '&' -> background non-blocking execution
         strict = False
-        if self.pos < self.length and self._peek() == "!":
-            self._advance()
-            strict = True
+        safe = False
+        background = False
+
+        idx = self.pos
+        while idx < self.length and self.source[idx] in (" ", "\t"):
+            idx += 1
+
+        if idx < self.length:
+            nxt = self.source[idx]
+            if nxt == "!":
+                self.pos = idx + 1
+                self.col += (idx + 1 - self.pos)
+                strict = True
+            elif nxt == "?":
+                self.pos = idx + 1
+                self.col += (idx + 1 - self.pos)
+                safe = True
+            elif nxt == "&" and (idx + 1 >= self.length or self.source[idx + 1] != "&"):
+                self.pos = idx + 1
+                self.col += (idx + 1 - self.pos)
+                background = True
+
 
         raw_cmd = "".join(content_buf)
         return Token(
@@ -235,4 +260,7 @@ class Lexer:
             line=cmd_line,
             column=cmd_col,
             strict=strict,
+            safe=safe,
+            background=background,
         )
+

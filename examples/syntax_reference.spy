@@ -1,0 +1,120 @@
+# examples/syntax_reference.spy
+# Reference completo ed eseguibile della sintassi del linguaggio spy
+
+import sys
+from pathlib import Path
+
+py = sys.executable
+
+# ---------------------------------------------------------------------------
+# 1. FORMA STATEMENT vs FORMA EXPRESSION
+# ---------------------------------------------------------------------------
+# Forma Statement: esegue il comando e fa streaming live dell'output sulla console.
+$(echo [1.1] Standalone statement form execution)
+
+# Forma Expression: assegna l'output a una variabile catturando stdout ed stderr.
+res = $(echo [1.2] Captured expression form)
+print("Stdout catturato:", res.stdout.strip())
+
+
+# ---------------------------------------------------------------------------
+# 2. MODIFICATORI DI ESECUZIONE: !, ?, &
+# ---------------------------------------------------------------------------
+# 2.1 Strict Mode (!): solleva CommandError se il codice di uscita != 0
+try:
+    $({py} -c "import sys; sys.exit(5)")!
+except Exception as err:
+    exit_val = getattr(getattr(err, "result", None), "exit_code", getattr(err, "exit_code", 5))
+    print(f"Rigettato con errore atteso (!): exit_code={exit_val}")
+
+# 2.2 Safe Mode (?): sopprime gli errori senza sollevare eccezioni
+probe = $({py} -c "import sys; sys.exit(42)")?
+print(f"Esecuzione sicura (?): exit_code={probe.exit_code}")
+
+# 2.3 Background Job (&): avvia in background in modo non bloccante
+job = $({py} -c "import time; time.sleep(0.1); print('Task async terminato')") &
+print("Job in esecuzione?", job.is_running)
+bg_res = job.wait()
+print("Job completato:", bg_res.stdout.strip())
+
+
+# ---------------------------------------------------------------------------
+# 3. INTERPOLAZIONE E SEMANTICA DEGLI APICI
+# ---------------------------------------------------------------------------
+env_name = "production"
+region = "eu-central-1"
+
+# 3.1 Interpolazione diretta di variabili o espressioni Python {expr}
+$(echo [3.1] Target: {env_name.upper()} in {region})
+
+# 3.2 Doppi apici: espandono le espressioni {var}
+$(echo "[3.2] Double quotes interpolate: {env_name}")
+
+# 3.3 Singoli apici: strettamente letterali (ottimo per regex, awk, template)
+$(echo '[3.3] Single quotes stay literal: {env_name}')
+
+# 3.4 Splat / List expansion ({*items})
+extra_flags = ["--verbose", "--dry-run"]
+res_splat = $({py} -c "import sys; print('Flags:', sys.argv[1:])" {*extra_flags})
+print("Splat result:", res_splat.stdout.strip())
+
+
+# ---------------------------------------------------------------------------
+# 4. CHAINING: .json, .tee, .input(...)
+# ---------------------------------------------------------------------------
+# 4.1 .json: parsing automatico dell'output JSON in un DynamicObj
+server_info = $({py} -c "import json; print(json.dumps({'hostname': 'web-01', 'port': 8080}))").json
+print(f"JSON object access: host={server_info.hostname}, port={server_info.port}")
+
+# 4.2 .tee: output visualizzato a schermo in tempo reale e CONTEMPORANEAMENTE salvato in res
+tee_result = $(echo [4.2] This line is streamed live to console and captured).tee
+assert "streamed live" in tee_result.stdout
+
+# 4.3 .input(...): invio di dati allo standard input del processo
+stdin_data = "line1\nline2\nline3"
+res_in = $({py} -c "import sys; print('Righe lette da stdin:', len(sys.stdin.read().splitlines()))").input(stdin_data)
+print(res_in.stdout.strip())
+
+
+# ---------------------------------------------------------------------------
+# 5. ITERAZIONE SUGLI OUTPUT E PROPRIETÀ DI CommandResult
+# ---------------------------------------------------------------------------
+output_cmd = $({py} -c "print('Item-1'); print('Item-2'); print('Item-3')")
+
+# Iterazione riga per riga su CommandResult:
+for row in output_cmd:
+    print("  Riga:", row)
+
+# Accesso a .lines (lista filtrata di righe non vuote) e .text (stringa trimmed):
+print("Righe (.lines):", output_cmd.lines)
+print("Testo (.text):", repr(output_cmd.text))
+print("Codice di uscita (.exit_code):", output_cmd.exit_code)
+print("Durata in secondi (.duration):", f"{output_cmd.duration:.4f}s")
+
+
+# ---------------------------------------------------------------------------
+# 6. SINTASSI SHELL PRESERVATA: PIPELINE, REDIREZIONI, SUBCOMMANDS
+# ---------------------------------------------------------------------------
+# Pipeline (|):
+$(echo apple & echo banana & echo cherry)
+
+# Redirezione (>):
+$({py} -c "print('Salvataggio su file temporaneo')" > temp_demo.txt)
+saved_text = Path("temp_demo.txt").read_text(encoding="utf-8").strip()
+print("Letto da file rediretto:", saved_text)
+Path("temp_demo.txt").unlink()
+
+# Verità booleana (Truthiness):
+if $(git --version):
+    print("Git è installato e disponibile nel PATH (exit_code == 0)")
+
+
+# ---------------------------------------------------------------------------
+# 7. CONTEXT MANAGERS: cd() ed env()
+# ---------------------------------------------------------------------------
+with env(APP_ENV="testing", DEBUG="true"):
+    $({py} -c "import os; print('ENV temporaneo APP_ENV:', os.getenv('APP_ENV'))")
+
+print("ENV ripristinato fuori dallo scope:", sys.modules["os"].getenv("APP_ENV"))
+
+print("\n--- Syntax Reference completata con successo! ---")

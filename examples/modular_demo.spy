@@ -1,0 +1,29 @@
+# modular_demo.spy - Modular pycli demonstration
+"""Demonstrates importing and using another .spy module seamlessly."""
+
+# 1. Standard module import of a sibling .spy file
+import devops_utils
+
+# 2. Selective 'from ... import ...' syntax from a .spy file
+from devops_utils import collect_system_info, get_git_branch, check_command_available
+
+$(echo === Modular pycli .spy Import Demonstration ===)
+
+# Call functions imported from devops_utils.spy
+branch = get_git_branch()
+$(echo Current Git branch via imported module: {branch})
+
+# Check available tools using helper
+for tool in ["git", "uv", "docker", "nonexistent_tool"]:
+    status = "Available" if check_command_available(tool) else "Not Found"
+    $(echo Tool [{tool}]: {status})
+
+# Collect structured dataclass from imported module
+info = collect_system_info()
+print("\nStructured System Diagnostics:")
+print(f"  Branch:       {info.branch}")
+print(f"  Commit Count: {info.commit_count}")
+print(f"  uv Version:   {info.uv_version}")
+print(f"  Git Runnable: {info.git_available}")
+
+$(echo All modular tasks completed successfully!)
