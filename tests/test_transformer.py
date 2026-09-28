@@ -22,7 +22,9 @@ def test_transpile_strict_mode():
 def test_transpile_interpolation():
     source = "vms = $(az vm list --subscription {subscription})\n"
     py = transpile(source, auto_import=False)
-    assert py == 'vms = run(f"az vm list --subscription {subscription}")\n'
+    assert py == 'vms = run(f"az vm list --subscription {shell_quote(subscription)}")\n'
+    py_unsafe = transpile(source, auto_import=False, unsafe_interpolation=True)
+    assert py_unsafe == 'vms = run(f"az vm list --subscription {subscription}")\n'
 
 
 def test_transpile_splat():
@@ -89,11 +91,11 @@ if $(git diff --quiet):
     print("Repository clean")
 """
     py = transpile(source)
-    assert "from pycli.runtime import run, run_expanded" in py
+    assert "from pycli.runtime import run, run_expanded, shell_quote" in py
     assert 'run("az login", capture=False)' in py
-    assert 'run(f"az vm list --subscription {subscription}")' in py
+    assert 'run(f"az vm list --subscription {shell_quote(subscription)}")' in py
     assert 'run("git branch --show-current")' in py
-    assert 'run(f"echo Current branch: {branch.stdout}", capture=False)' in py
+    assert 'run(f"echo Current branch: {shell_quote(branch.stdout)}", capture=False)' in py
     assert 'run_expanded("rm", *files, capture=False)' in py
     assert 'if run("git diff --quiet"):' in py
 

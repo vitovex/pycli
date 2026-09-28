@@ -33,15 +33,46 @@ class LexerError(Exception):
         super().__init__(f"Line {line}, Column {column}: {message}")
 
 
+import os
+
+MAX_SOURCE_SIZE_BYTES = 10 * 1024 * 1024
+STRING_PREFIXES = frozenset(["r", "b", "f", "u", "rb", "br", "fr", "rf"])
+
+
+def get_max_source_size() -> int:
+    """Return maximum allowed source size in bytes from env or default."""
+    return int(os.environ.get("PYCLI_MAX_SOURCE_SIZE", MAX_SOURCE_SIZE_BYTES))
+
+
 class Lexer:
     """Scans .spy source code into alternating Python code and CommandExpression tokens."""
 
     def __init__(self, source: str) -> None:
+        max_size = get_max_source_size()
+        source_size = len(source.encode("utf-8"))
+        if source_size > max_size:
+            raise ValueError(
+                f"Source size ({source_size} bytes) exceeds maximum allowed size "
+                f"({max_size} bytes)"
+            )
         self.source = source
         self.pos = 0
         self.line = 1
         self.col = 1
         self.length = len(source)
+
+    def _peek_string_prefix(self) -> str:
+        """Return any string prefix at current position (e.g. 'r', 'rb'), or ''."""
+        if self.pos > 0 and (self.source[self.pos - 1].isalnum() or self.source[self.pos - 1] == "_"):
+            return ""
+        for length in (2, 1):
+            if self.pos + length <= self.length:
+                candidate = self.source[self.pos : self.pos + length].lower()
+                if candidate in STRING_PREFIXES:
+                    next_ch = self._peek(length)
+                    if next_ch in ('"', "'"):
+                        return candidate
+        return ""
 
     def _peek(self, offset: int = 0) -> str:
         idx = self.pos + offset
@@ -87,7 +118,14 @@ class Lexer:
                     py_buf.append(self._advance())
                 continue
 
-            # 2. Check for string literals in Python
+            # 2. Check for string prefixes (r, b, f, u, rb, br, fr, rf) before quotes
+            prefix = self._peek_string_prefix()
+            if prefix:
+                for _ in range(len(prefix)):
+                    py_buf.append(self._advance())
+                ch = self._peek()
+
+            # 3. Check for string literals in Python
             if ch in ("'", '"'):
                 # Check for triple-quote
                 quote_char = ch
@@ -129,7 +167,7 @@ class Lexer:
                             py_buf.append(self._advance())
                 continue
 
-            # 3. Check for $( command expression
+            # 4. Check for $( command expression (strictly outside strings)
             if ch == "$" and self._peek(1) == "(":
                 flush_py()
                 cmd_token = self._scan_command_expr()

@@ -9,11 +9,20 @@ from typing import List, Optional
 import ast
 import re
 
+import warnings
+
 def is_valid_interpolation_expr(expr: str) -> bool:
     try:
         p = ast.parse(expr.strip(), mode="eval")
         return not isinstance(p.body, ast.Dict)
-    except Exception:
+    except SyntaxError:
+        return False
+    except Exception as e:
+        warnings.warn(
+            f"Unexpected error validating interpolation expr {expr!r}: {e}",
+            RuntimeWarning,
+            stacklevel=3,
+        )
         return False
 
 
@@ -77,7 +86,10 @@ class CommandNode(ASTNode):
 
     def has_interpolation(self) -> bool:
         return any(
-            isinstance(part, (InterpolationNode, SplatNode)) for part in self.parts
+            isinstance(part, (InterpolationNode, SplatNode))
+            or (isinstance(part, RedirectionNode) and "{" in part.target and "}" in part.target)
+            or (isinstance(part, (WordNode, StringNode)) and "{" in part.value and "}" in part.value)
+            for part in self.parts
         )
 
 
@@ -335,15 +347,18 @@ class CommandParser:
         i = start
         if i < n and text[i] in ("'", '"'):
             q = text[i]
+            buf: list[str] = [q]
             i += 1
-            buf: list[str] = []
             while i < n:
                 c = text[i]
-                if c == q:
-                    i += 1
-                    break
                 buf.append(c)
                 i += 1
+                if c == q:
+                    break
+                if c == "\\":
+                    if i < n:
+                        buf.append(text[i])
+                        i += 1
             return "".join(buf), i
         else:
             buf = []

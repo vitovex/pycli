@@ -8,18 +8,22 @@ from typing import Any
 
 from pycli.highlighter import enable_windows_ansi
 from pycli.importer import install_import_hook
+from pycli.lexer import LexerError
+from pycli.parser import ParseError
 from pycli.runtime import (
     CommandError,
     CommandResult,
+    CommandTimeoutError,
     DynamicObj,
     cd,
     env,
     run,
     run_bg,
     run_expanded,
+    shell_quote,
     wait_all,
 )
-from pycli.transformer import transpile
+from pycli.transformer import TranspilerError, transpile
 
 
 class SpyConsole(code.InteractiveConsole):
@@ -38,8 +42,10 @@ class SpyConsole(code.InteractiveConsole):
         locals.setdefault("wait_all", wait_all)
         locals.setdefault("cd", cd)
         locals.setdefault("env", env)
+        locals.setdefault("shell_quote", shell_quote)
         locals.setdefault("CommandResult", CommandResult)
         locals.setdefault("CommandError", CommandError)
+        locals.setdefault("CommandTimeoutError", CommandTimeoutError)
         locals.setdefault("DynamicObj", DynamicObj)
 
         super().__init__(locals=locals, filename=filename)
@@ -48,8 +54,11 @@ class SpyConsole(code.InteractiveConsole):
         """Transpile source line and execute standard interactive Python."""
         try:
             transpiled = transpile(source)
-        except Exception:
-            self.showsyntaxerror(filename)
+        except (LexerError, ParseError, TranspilerError) as e:
+            sys.stderr.write(f"  spy syntax error: {e}\n")
+            return False
+        except Exception as e:
+            sys.stderr.write(f"  [pycli internal error] {type(e).__name__}: {e}\n")
             return False
 
         return super().runsource(transpiled, filename=filename, symbol=symbol)

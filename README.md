@@ -113,7 +113,49 @@ spy transpile script.spy -o script.py
 # Force / disable color
 spy transpile script.spy --color
 spy transpile script.spy --no-color
+
+# Validate generated Python code with ast.parse
+spy transpile script.spy --validate
+
+# Disable automatic shell_quote() sanitization on interpolations
+spy transpile script.spy --unsafe-interpolation
 ```
+
+### Run `.spy` Scripts
+
+```powershell
+# Run a script directly
+spy run script.spy
+# or simply
+spy script.spy
+
+# Run with generated Python syntax validation
+spy run --validate script.spy
+
+# Run with unsafe interpolation (disables shell_quote)
+spy run --unsafe-interpolation script.spy
+
+# Run with warning on untrusted external scripts
+spy run --warn-external script.spy
+```
+
+---
+
+## Security & Robustness
+
+### Automatic Shell Interpolation Sanitization
+By default, all variable interpolations `{var}` and dynamic redirection targets are wrapped with `shell_quote(var)` (`shlex.quote`) during transpilation. This protects against shell injection attacks if variables contain metacharacters (`;`, `&&`, `|`, etc.).
+If raw, unquoted shell syntax expansion is explicitly needed, pass `--unsafe-interpolation` or use `transpile(..., unsafe_interpolation=True)`.
+
+### Execution Privilege Model (Not a Sandbox)
+`pycli` executes `.spy` files on standard CPython runtimes with the full privileges and environment of the user running the process. It is **not** a sandbox. When executing `.spy` scripts from external or untrusted sources, use `--warn-external` and verify the script contents.
+
+### Command Execution Controls
+The runtime functions `run()`, `run_expanded()`, and `async_run()` support robust controls:
+- **`timeout`**: Terminate hanging processes and raise `CommandTimeoutError`.
+- **`encoding`**: Custom text decoding (default `"utf-8"`, configurable to CP1252, Latin-1, etc.).
+- **`max_output_bytes`**: Cap memory consumption by truncating stdout/stderr beyond a threshold (`res.truncated = True`).
+
 
 
 
