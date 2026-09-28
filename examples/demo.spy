@@ -1,13 +1,27 @@
 # pycli Demo Script (.spy)
-$(echo diggiotto)
-branch = $(git branch --show-current)
-$(echo 'Active branch is: {branch.stdout.strip()}')
-#print(branch.stdout.strip())
-files = ["pyproject.toml", "README.md"]
-res = $(python -c "import sys; print('Inspecting files:', *sys.argv[1:])" {*files})
+import sys
+from pathlib import Path
+
+# 1. Statement and expression execution
+$(echo Starting spy demo...)
+branch = $(git branch --show-current).text
+print(f"Active git branch: {branch}")
+
+# 2. String interpolation and splat list expansion ({*items})
+config_files = ["pyproject.toml", "README.md"]
+res = $(python -c "import sys; print('Config files:', *sys.argv[1:])" {*config_files})
 print(res.stdout.strip())
 
-if $(python -c "import sys; sys.exit(0)"):
-    print("Execution check passed successfully!")
+# 3. Pipelines (|)
+filter_cmd = "findstr" if sys.platform == "win32" else "grep"
+readme_title = $(cat README.md | {filter_cmd} "pycli").lines[0]
+print(f"Extracted title via pipeline: {readme_title}")
 
+# 4. Context manager (cd)
+with cd("docs"):
+    doc_files = $({sys.executable} -c "import os; print(', '.join(os.listdir('.')))").text
+    print(f"Documentation folder contents: {doc_files}")
 
+# 5. Truthiness in conditional statements
+if $(git --version):
+    print("Git executable verified successfully!")

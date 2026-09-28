@@ -15,48 +15,62 @@ See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md).
 
 ## Example
 
-### Source DSL (`script.spy`)
+### Source DSL (`deploy.spy`)
 
 ```python
-subscription = "prod"
+target_env = "production"
+branch = $(git branch --show-current).text
 
-$(az login)
+# 1. Pipelines (|) and line streaming
+live_pods = $(kubectl get pods -n {target_env} | grep -E 'Running|Pending').lines
+for pod in live_pods:
+    print(f"Active pod: {pod}")
 
-vms = $(az vm list --subscription {subscription}).json
-for vm in vms:
-    print(vm.name)
+# 2. Context managers: temporary directory (cd) and environment variables (env)
+with cd("frontend"), env(NODE_ENV=target_env):
+    $(npm ci)!
+    build_log = $(npm run build).tee
 
-branch = $(git branch --show-current)
-$(echo Current branch: {branch.stdout})
+# 3. List expansion (splat), structured JSON output, and safe probing (?)
+artifacts = ["dist/app.js", "dist/app.css"]
+$(gzip -k {*artifacts})
 
-files = ["temp1.txt", "temp2.txt"]
-$(rm {*files})
+cluster = $(az aks show --name prod-cluster --resource-group {target_env}).json
+print(f"Cluster FQDN: {cluster.fqdn}")
 
-if $(git diff --quiet):
-    print("Repository clean")
+status = $(curl -sSf http://localhost:8080/health)?
+if status:
+    print("Health check passed successfully!")
 ```
 
-### Transpiled Python (`script.py`)
+### Transpiled Python (`deploy.py`)
 
 ```python
-from pycli.runtime import run, run_expanded
+from pycli.runtime import cd, env, run, run_expanded
 
-subscription = "prod"
+target_env = "production"
+branch = run("git branch --show-current").text
 
-run("az login", capture=False)
+# 1. Pipelines (|) and line streaming
+live_pods = run(f"""kubectl get pods -n {target_env} | grep -E 'Running|Pending'""").lines
+for pod in live_pods:
+    print(f"Active pod: {pod}")
 
-vms = run(f"az vm list --subscription {subscription}").json
-for vm in vms:
-    print(vm.name)
+# 2. Context managers: temporary directory (cd) and environment variables (env)
+with cd("frontend"), env(NODE_ENV=target_env):
+    run("npm ci", capture=False, check=True)
+    build_log = run("npm run build", tee=True)
 
-branch = run("git branch --show-current")
-run(f"echo Current branch: {branch.stdout}", capture=False)
+# 3. List expansion (splat), structured JSON output, and safe probing (?)
+artifacts = ["dist/app.js", "dist/app.css"]
+run_expanded("gzip", "-k", *artifacts, capture=False)
 
-files = ["temp1.txt", "temp2.txt"]
-run_expanded("rm", *files, capture=False)
+cluster = run(f"az aks show --name prod-cluster --resource-group {target_env}").json
+print(f"Cluster FQDN: {cluster.fqdn}")
 
-if run("git diff --quiet"):
-    print("Repository clean")
+status = run("curl -sSf http://localhost:8080/health", suppress_errors=True)
+if status:
+    print("Health check passed successfully!")
 ```
 
 ## CLI Usage
@@ -284,22 +298,51 @@ $(ruff check {*files})
 
 ### 5. Preserved Shell Semantics
 
-`spy` passes commands directly to the platform's native shell environment, preserving core shell capabilities:
+`spy` passes command strings to the underlying shell without interfering with native shell operators.
 
-- **Pipelines (`|`)**:
-  ```python
-  $(kubectl get pods | grep api | sort)
-  ```
-- **Redirections (`>`, `>>`, `<`)**:
-  ```python
-  $(git status > current_status.txt)
-  $(uptime >> uptime_history.log)
-  ```
-- **Subcommands (`$(...)`)**:
-  Inner command substitutions are handled directly by the shell:
-  ```python
-  $(echo $(git rev-parse --short HEAD))
-  ```
+#### Pipelines (`|`)
+Connect the standard output of one command directly to the standard input of the next:
+```python
+# 1. Pipeline in statement form (streaming output directly to terminal)
+$(kubectl get pods -n prod | grep -v Completed | sort)
+
+# 2. Pipeline in expression form (captured and iterated)
+failed_jobs = $(docker ps -a | grep "Exited (" | awk '{print $1}').lines
+for container_id in failed_jobs:
+    print(f"Removing dead container: {container_id}")
+    $(docker rm {container_id})
+
+# 3. Chaining with Python processing
+build_errors = $(cargo check 2>&1 | grep "error\[E").lines
+if build_errors:
+    print(f"Found {len(build_errors)} compile errors:")
+    for err in build_errors:
+        print("  -", err)
+```
+
+#### Redirections (`>`, `>>`, `<`)
+Direct process outputs or inputs to and from filesystem files:
+```python
+# Overwrite file with stdout (>)
+$(terraform output -json > tf_outputs.json)
+
+# Append to log file (>>)
+$(date >> deployment.log)
+$(echo "Deployed by {user} on {branch}" >> deployment.log)
+
+# Read input from file (<)
+$(mysql -u root -p{db_pass} my_database < migration.sql)!
+```
+
+#### Subcommands (`$(...)`)
+Inner shell command substitutions are handled directly by the shell runtime:
+```python
+# Create timestamped tarball using subshell date command:
+$(tar -czf backup-$(date +%Y%m%d).tar.gz /var/data)
+
+# Create git release tag from file content:
+$(git tag release-$(cat VERSION))
+```
 
 ---
 
@@ -333,23 +376,39 @@ else:
 
 ### 7. Built-in Context Managers
 
-Every `.spy` script automatically has access to `cd()` and `env()` without manual imports:
+Every `.spy` script and module automatically has access to `cd()` and `env()` as first-class primitives without requiring any manual `import` statement.
 
-#### `cd(path)` — Temporary Directory Navigation
-Changes directory for the duration of the `with` block and guarantees restoration to the original directory upon exit:
+#### `with cd(path)` — Directory Navigation
+Changes current working directory for the duration of the `with` block and **guarantees** restoration to the previous directory upon exiting, even if an exception occurs:
 ```python
-with cd("subproject"):
-    $(npm install)
-    $(npm run build)
-# Automatically back in original working directory
+# 1. Work in a specific subproject directory
+with cd("services/billing"):
+    $(cargo build --release)!
+    $(cargo test)
+
+# 2. Nested directory navigation
+with cd("packages"):
+    with cd("frontend"):
+        $(npm test)
+    # Automatically back in "packages"
+# Automatically back in the root directory
 ```
 
-#### `env(**kwargs)` — Temporary Environment Variables
-Sets environment variables for the duration of the `with` block and safely restores the original environment afterwards:
+#### `with env(**kwargs)` — Temporary Environment Variables
+Sets or overrides environment variables for the duration of the `with` block and safely restores the original environment afterwards:
 ```python
-with env(DATABASE_URL="postgres://localhost:5432/test", LOG_LEVEL="DEBUG"):
-    $(pytest tests/)
-# Original environment restored
+with env(AWS_DEFAULT_REGION="eu-west-1", STAGE="staging"):
+    $(aws s3 ls)
+    $(serverless deploy)
+# AWS_DEFAULT_REGION and STAGE are restored to their original values
+```
+
+#### Combining `cd()` and `env()`
+You can combine multiple context managers cleanly on a single line:
+```python
+with cd("apps/backend"), env(DATABASE_URL="postgres://test:5432/db", LOG_LEVEL="DEBUG"):
+    $(alembic upgrade head)!
+    $(pytest -v)
 ```
 
 ---

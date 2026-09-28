@@ -95,16 +95,22 @@ print("Durata in secondi (.duration):", f"{output_cmd.duration:.4f}s")
 # ---------------------------------------------------------------------------
 # 6. SINTASSI SHELL PRESERVATA: PIPELINE, REDIREZIONI, SUBCOMMANDS
 # ---------------------------------------------------------------------------
-# Pipeline (|):
-$(echo apple & echo banana & echo cherry)
+# 6.1 Pipeline (|): flusso di dati tra processi concatenati
+filter_tool = "findstr" if sys.platform == "win32" else "grep"
+res_pipe = $(echo alpha beta gamma | {filter_tool} beta)
+print("Pipeline output:", res_pipe.stdout.strip())
 
-# Redirezione (>):
+# 6.2 Redirezione (> e >>):
 $({py} -c "print('Salvataggio su file temporaneo')" > temp_demo.txt)
 saved_text = Path("temp_demo.txt").read_text(encoding="utf-8").strip()
 print("Letto da file rediretto:", saved_text)
 Path("temp_demo.txt").unlink()
 
-# Verità booleana (Truthiness):
+# 6.3 Subcommands ($(...)):
+res_sub = $(echo Current py version: $({py} -c "import sys; print(sys.version.split()[0])"))
+print(res_sub.stdout.strip())
+
+# 6.4 Verità booleana (Truthiness):
 if $(git --version):
     print("Git è installato e disponibile nel PATH (exit_code == 0)")
 
@@ -112,6 +118,19 @@ if $(git --version):
 # ---------------------------------------------------------------------------
 # 7. CONTEXT MANAGERS: cd() ed env()
 # ---------------------------------------------------------------------------
+# 7.1 with cd(path): cambio directory garantito e sicuro
+import tempfile
+target_dir = tempfile.mkdtemp()
+
+with cd(target_dir):
+    $({py} -c "with open('marker.txt', 'w') as f: f.write('Inside temp directory')")
+    assert Path("marker.txt").exists()
+    print("cd() attivo: creato marker.txt in", Path.cwd())
+
+assert not Path("marker.txt").exists()
+print("cd() ripristinato: tornati nella cartella originaria:", Path.cwd())
+
+# 7.2 with env(KEY=value): scope temporaneo per variabili d'ambiente
 with env(APP_ENV="testing", DEBUG="true"):
     $({py} -c "import os; print('ENV temporaneo APP_ENV:', os.getenv('APP_ENV'))")
 
