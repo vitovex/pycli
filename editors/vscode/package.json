@@ -1,0 +1,52 @@
+{
+  "name": "pycli-vscode",
+  "displayName": "pycli Language Support",
+  "description": "Rich language support, syntax highlighting, and snippets for pycli (.spy) files.",
+  "version": "0.1.0",
+  "publisher": "pycli",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "keywords": [
+    "pycli",
+    "spy",
+    "python",
+    "devops",
+    "dsl",
+    "shell",
+    "bash"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "spy",
+        "aliases": [
+          "pycli",
+          "spy",
+          "Python CLI DSL"
+        ],
+        "extensions": [
+          ".spy"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "spy",
+        "scopeName": "source.spy",
+        "path": "./syntaxes/spy.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "spy",
+        "path": "./snippets/spy.json"
+      }
+    ]
+  }
+}

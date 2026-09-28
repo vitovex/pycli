@@ -97,3 +97,11 @@ def test_run_expanded():
     assert "arg1" in res.stdout
     assert "arg2" in res.stdout
     assert "arg3" in res.stdout
+
+
+def test_run_capture_false(capsys):
+    res = run("python -c \"print('streaming to terminal')\"", capture=False)
+    assert res.exit_code == 0
+    assert "streaming to terminal" in res.stdout
+    captured = capsys.readouterr()
+    assert "streaming to terminal" in captured.out

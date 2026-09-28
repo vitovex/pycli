@@ -32,13 +32,14 @@ class Transformer:
 
         output_chunks: list[str] = []
 
-        for token in tokens:
+        for i, token in enumerate(tokens):
             if token.type == TokenType.PYTHON_CODE:
                 output_chunks.append(token.value)
             elif token.type == TokenType.COMMAND_EXPR:
+                is_statement = self._is_statement_context(tokens, i)
                 parser = CommandParser(token.value, strict=token.strict)
                 ast_node = parser.parse()
-                py_code = self._transform_command_expr(ast_node)
+                py_code = self._transform_command_expr(ast_node, is_statement=is_statement)
                 output_chunks.append(py_code)
 
         result_code = "".join(output_chunks)
@@ -48,15 +49,79 @@ class Transformer:
 
         return result_code
 
-    def _transform_command_expr(self, node: CommandExpressionNode) -> str:
+    def _is_statement_context(self, tokens: list[Token], index: int) -> bool:
+        """Determines if the command expression at tokens[index] is a standalone statement."""
+        # 1. Inspect code preceding the command on the current line
+        prev_code = tokens[index - 1].value if index > 0 else ""
+        last_nl = prev_code.rfind("\n")
+        line_before = prev_code[last_nl + 1 :] if last_nl != -1 else prev_code
+
+        # Check for unclosed brackets/parentheses in line_before
+        bracket_stack: list[str] = []
+        in_quote: str | None = None
+        for ch in line_before:
+            if in_quote:
+                if ch == in_quote:
+                    in_quote = None
+            elif ch in ("'", '"'):
+                in_quote = ch
+            elif ch in "([{":
+                bracket_stack.append(ch)
+            elif ch in ")]}":
+                if bracket_stack:
+                    bracket_stack.pop()
+
+        if bracket_stack:
+            return False
+
+        stripped_before = line_before.strip()
+        # Statement must start after indentation, after a semicolon, or after a block colon (e.g. if cond: $(cmd))
+        if not (
+            stripped_before == ""
+            or stripped_before.endswith(";")
+            or (
+                stripped_before.endswith(":")
+                and any(
+                    stripped_before.startswith(kw)
+                    for kw in (
+                        "if ",
+                        "elif ",
+                        "else:",
+                        "try:",
+                        "finally:",
+                        "except",
+                        "for ",
+                        "while ",
+                        "with ",
+                        "def ",
+                    )
+                )
+            )
+        ):
+            return False
+
+        # 2. Inspect code following the command on the current line
+        next_code = tokens[index + 1].value if index + 1 < len(tokens) else ""
+        first_nl = next_code.find("\n")
+        line_after = next_code[:first_nl] if first_nl != -1 else next_code
+        stripped_after = line_after.strip()
+
+        # Statement cannot be followed by operators, member access (.json), commas, brackets, etc.
+        # It can only be empty, or followed by a comment (# ...) or semicolon (; ...)
+        if stripped_after == "" or stripped_after.startswith("#") or stripped_after.startswith(";"):
+            return True
+
+        return False
+
+    def _transform_command_expr(self, node: CommandExpressionNode, is_statement: bool = False) -> str:
         if node.pipeline.has_splat():
             self.used_symbols.add("run_expanded")
-            return self._transform_expanded_command(node)
+            return self._transform_expanded_command(node, is_statement=is_statement)
         else:
             self.used_symbols.add("run")
-            return self._transform_simple_command(node)
+            return self._transform_simple_command(node, is_statement=is_statement)
 
-    def _transform_simple_command(self, node: CommandExpressionNode) -> str:
+    def _transform_simple_command(self, node: CommandExpressionNode, is_statement: bool = False) -> str:
         raw = node.raw
         has_interpolation = node.pipeline.has_interpolation()
 
@@ -67,11 +132,17 @@ class Transformer:
             # F-string
             cmd_arg = self._format_fstring(raw)
 
+        kwargs: list[str] = []
+        if is_statement:
+            kwargs.append("capture=False")
         if node.strict:
-            return f"run({cmd_arg}, check=True)"
+            kwargs.append("check=True")
+
+        if kwargs:
+            return f"run({cmd_arg}, {', '.join(kwargs)})"
         return f"run({cmd_arg})"
 
-    def _transform_expanded_command(self, node: CommandExpressionNode) -> str:
+    def _transform_expanded_command(self, node: CommandExpressionNode, is_statement: bool = False) -> str:
         args: list[str] = []
 
         for cmd in node.pipeline.commands:
@@ -93,6 +164,8 @@ class Transformer:
                 elif isinstance(part, SubcommandNode):
                     args.append(self._format_literal_string(f"$({part.pipeline})"))
 
+        if is_statement:
+            args.append("capture=False")
         if node.strict:
             args.append("check=True")
 

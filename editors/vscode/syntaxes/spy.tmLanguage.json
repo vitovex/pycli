@@ -1,0 +1,190 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "pycli",
+  "scopeName": "source.spy",
+  "patterns": [
+    {
+      "include": "#command-expression"
+    },
+    {
+      "include": "source.python"
+    }
+  ],
+  "repository": {
+    "command-expression": {
+      "name": "meta.command.expression.pycli",
+      "begin": "(\\$\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.command.begin.pycli keyword.operator.command.pycli"
+        }
+      },
+      "end": "(\\))(!)?",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.command.end.pycli keyword.operator.command.pycli"
+        },
+        "2": {
+          "name": "keyword.operator.strict.pycli"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#splat"
+        },
+        {
+          "include": "#interpolation"
+        },
+        {
+          "include": "#subcommand"
+        },
+        {
+          "include": "#pipeline"
+        },
+        {
+          "include": "#redirection"
+        },
+        {
+          "include": "#command-string-double"
+        },
+        {
+          "include": "#command-string-single"
+        },
+        {
+          "include": "#command-flags"
+        },
+        {
+          "include": "#command-names"
+        }
+      ]
+    },
+    "subcommand": {
+      "name": "meta.subcommand.pycli",
+      "begin": "(\\$\\()",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.subcommand.begin.pycli keyword.operator.command.pycli"
+        }
+      },
+      "end": "(\\))",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.subcommand.end.pycli keyword.operator.command.pycli"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#splat"
+        },
+        {
+          "include": "#interpolation"
+        },
+        {
+          "include": "#subcommand"
+        },
+        {
+          "include": "#pipeline"
+        },
+        {
+          "include": "#redirection"
+        },
+        {
+          "include": "#command-string-double"
+        },
+        {
+          "include": "#command-string-single"
+        },
+        {
+          "include": "#command-flags"
+        },
+        {
+          "include": "#command-names"
+        }
+      ]
+    },
+    "splat": {
+      "name": "meta.splat.expression.pycli",
+      "begin": "(\\{\\*)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.splat.begin.pycli keyword.operator.splat.pycli"
+        }
+      },
+      "end": "(\\})",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.splat.end.pycli keyword.operator.splat.pycli"
+        }
+      },
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "interpolation": {
+      "name": "meta.interpolation.pycli",
+      "begin": "(\\{)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.interpolation.begin.pycli"
+        }
+      },
+      "end": "(\\})",
+      "endCaptures": {
+        "1": {
+          "name": "punctuation.definition.interpolation.end.pycli"
+        }
+      },
+      "patterns": [
+        {
+          "include": "source.python"
+        }
+      ]
+    },
+    "pipeline": {
+      "match": "(\\|)",
+      "name": "keyword.operator.pipe.shell.pycli"
+    },
+    "redirection": {
+      "match": "(>>|>|<)",
+      "name": "keyword.operator.redirect.shell.pycli"
+    },
+    "command-string-double": {
+      "name": "string.quoted.double.shell.pycli",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.pycli"
+        },
+        {
+          "include": "#splat"
+        },
+        {
+          "include": "#interpolation"
+        }
+      ]
+    },
+    "command-string-single": {
+      "name": "string.quoted.single.shell.pycli",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.pycli"
+        }
+      ]
+    },
+    "command-flags": {
+      "match": "(--[a-zA-Z0-9_-]+|-[a-zA-Z0-9]+)",
+      "name": "variable.parameter.option.pycli"
+    },
+    "command-names": {
+      "match": "\\b(git|az|kubectl|docker|podman|terraform|echo|python|python3|pip|uv|curl|wget|tar|zip|unzip|find|grep|awk|sed|cat|ls|rm|mv|cp|mkdir|chmod|chown|ssh|scp|rsync|head|tail|sort|uniq|wc|env|export)\\b",
+      "name": "support.function.builtin.shell.pycli entity.name.function.command.pycli"
+    }
+  }
+}

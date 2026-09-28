@@ -1,0 +1,45 @@
+{
+  "Command Statement": {
+    "prefix": "cmd",
+    "body": [
+      "$(${1:command})"
+    ],
+    "description": "Execute a shell command as a statement"
+  },
+  "Command Expression Assignment": {
+    "prefix": "cmdvar",
+    "body": [
+      "${1:result} = $(${2:command})"
+    ],
+    "description": "Execute a shell command and capture result into a variable"
+  },
+  "Command JSON Assignment": {
+    "prefix": "cmdjson",
+    "body": [
+      "${1:data} = $(${2:command}).json"
+    ],
+    "description": "Execute a shell command and parse JSON output dynamically"
+  },
+  "Strict Mode Command": {
+    "prefix": "cmdstrict",
+    "body": [
+      "$(${1:command})!"
+    ],
+    "description": "Execute a command in strict mode (raises CommandError on failure)"
+  },
+  "Command Splat Expansion": {
+    "prefix": "cmdsplat",
+    "body": [
+      "$(${1:command} {*${2:files}})"
+    ],
+    "description": "Execute command with list splat expansion"
+  },
+  "Conditional Command Truthiness": {
+    "prefix": "cmdif",
+    "body": [
+      "if $(${1:git diff --quiet}):",
+      "    ${2:pass}"
+    ],
+    "description": "Evaluate command exit code in an if condition"
+  }
+}

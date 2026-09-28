@@ -6,6 +6,7 @@ import json
 import os
 import shlex
 import subprocess
+import sys
 import time
 from typing import Any, Iterator, Mapping, Sequence
 
@@ -155,6 +156,7 @@ class CommandResult:
 def run(
     command: str | Sequence[str],
     *,
+    capture: bool = True,
     check: bool = False,
     shell: bool | None = None,
     cwd: str | None = None,
@@ -164,6 +166,7 @@ def run(
 
     Args:
         command: The shell command string or argument list to execute.
+        capture: If False, streams stdout and stderr to the console (sys.stdout/stderr).
         check: If True, raises CommandError if exit_code != 0 (Strict Mode).
         shell: Whether to run command through the system shell. If None, True for str, False for list.
         cwd: Working directory to run command in.
@@ -185,6 +188,14 @@ def run(
     )
     duration = time.perf_counter() - start
 
+    if not capture:
+        if proc.stdout:
+            sys.stdout.write(proc.stdout)
+            sys.stdout.flush()
+        if proc.stderr:
+            sys.stderr.write(proc.stderr)
+            sys.stderr.flush()
+
     result = CommandResult(
         command=cmd_str,
         stdout=proc.stdout,
@@ -201,6 +212,7 @@ def run(
 
 def run_expanded(
     *parts: Any,
+    capture: bool = True,
     check: bool = False,
     shell: bool | None = None,
     cwd: str | None = None,
@@ -230,6 +242,6 @@ def run_expanded(
 
     if shell:
         command_str = " ".join(arg_strings)
-        return run(command_str, check=check, shell=True, cwd=cwd, env=env)
+        return run(command_str, capture=capture, check=check, shell=True, cwd=cwd, env=env)
 
-    return run(arg_strings, check=check, shell=False, cwd=cwd, env=env)
+    return run(arg_strings, capture=capture, check=check, shell=False, cwd=cwd, env=env)

@@ -43,17 +43,17 @@ from pycli.runtime import run, run_expanded
 
 subscription = "prod"
 
-run("az login")
+run("az login", capture=False)
 
 vms = run(f"az vm list --subscription {subscription}").json
 for vm in vms:
     print(vm.name)
 
 branch = run("git branch --show-current")
-run(f"echo Current branch: {branch.stdout}")
+run(f"echo Current branch: {branch.stdout}", capture=False)
 
 files = ["temp1.txt", "temp2.txt"]
-run_expanded("rm", *files)
+run_expanded("rm", *files, capture=False)
 
 if run("git diff --quiet"):
     print("Repository clean")
@@ -83,13 +83,14 @@ uv run pycli script.spy
 
 | Feature | Syntax Example | Target Python Equivalent |
 |---|---|---|
-| **Command Expression** | `$(git status)` | `run("git status")` |
-| **Strict Mode** | `$(git status)!` | `run("git status", check=True)` |
-| **Interpolation** | `$(echo {name})` | `run(f"echo {name}")` |
-| **List Expansion (Splat)** | `$(rm {*files})` | `run_expanded("rm", *files)` |
-| **Pipelines** | `$(kubectl get pods \| grep api)` | `run("kubectl get pods \| grep api")` |
-| **Redirection** | `$(git status > status.txt)` | `run("git status > status.txt")` |
-| **Subcommands** | `$(echo $(git branch --show-current))` | `run("echo $(git branch --show-current)")` |
+| **Statement Form** | `$(git status)` | `run("git status", capture=False)` (streams output to console) |
+| **Expression Form** | `res = $(git status)` | `res = run("git status")` (captures stdout/stderr) |
+| **Strict Mode** | `$(git status)!` | `run("git status", capture=False, check=True)` |
+| **Interpolation** | `$(echo {name})` | `run(f"echo {name}", capture=False)` |
+| **List Expansion (Splat)** | `$(rm {*files})` | `run_expanded("rm", *files, capture=False)` |
+| **Pipelines** | `$(kubectl get pods \| grep api)` | `run("kubectl get pods \| grep api", capture=False)` |
+| **Redirection** | `$(git status > status.txt)` | `run("git status > status.txt", capture=False)` |
+| **Subcommands** | `$(echo $(git branch --show-current))` | `run("echo $(git branch --show-current)", capture=False)` |
 | **Truthiness** | `if $(git diff --quiet): ...` | `if run("git diff --quiet"): ...` (truthy if `exit_code == 0`) |
 | **Structured Output (JSON)** | `vms = $(az vm list).json` | Navigable `DynamicObj` via `vm.name` or `vm["name"]` |
 | **CommandResult Properties** | `res = $(git status)` | `res.stdout`, `res.stderr`, `res.exit_code`, `res.command`, `res.duration` |
@@ -126,3 +127,23 @@ uv run pytest
 # Run CLI help
 uv run pycli --help
 ```
+
+## Editor Support
+
+Language extensions and syntax highlighting definitions are provided in the `editors/` directory:
+
+- **Visual Studio Code & Antigravity IDE** ([editors/vscode](editors/vscode)): Full Python + embedded shell grammar, command delimiter highlighting, interpolation scoping, and snippets (`cmd`, `cmdvar`, `cmdjson`, `cmdstrict`, `cmdsplat`, `cmdif`).
+  - To install in VSCode:
+    ```powershell
+    Copy-Item -Recurse -Force "editors/vscode" "$env:USERPROFILE\.vscode\extensions\pycli-vscode"
+    ```
+  - To install in Antigravity IDE:
+    ```powershell
+    Copy-Item -Recurse -Force "editors/vscode" "$env:USERPROFILE\.antigravity-ide\extensions\pycli-vscode"
+    ```
+- **Notepad++** ([editors/notepadplusplus](editors/notepadplusplus)): User Defined Language (UDL) definition for `.spy` files.
+  - To install locally:
+    ```powershell
+    Copy-Item -Force "editors/notepadplusplus/pycli.xml" "$env:APPDATA\Notepad++\userDefineLangs\"
+    ```
+
