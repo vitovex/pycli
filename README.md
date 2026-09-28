@@ -61,23 +61,42 @@ if run("git diff --quiet"):
 
 ## CLI Usage
 
+### Global Installation (Centralized Command)
+
+You can install `pycli` globally into your system `PATH` using `uv tool`:
+
+```powershell
+uv tool install --editable . --force
+```
+
+This registers two commands globally on your machine:
+- **`spy`**: Ultra-concise runner for `.spy` scripts.
+- **`pycli`**: The full CLI tool with subcommands.
+
+Once installed, you can run `.spy` scripts from **any folder or terminal**:
+```powershell
+spy script.spy
+# or
+pycli script.spy
+```
+
+### Direct Script Execution without Global Install
+
+If working inside this repository with `uv`:
+```powershell
+uv run pycli script.spy
+```
+
 ### Transpile `.spy` to `.py`
 
 ```powershell
 # Output to stdout
-uv run pycli transpile script.spy
+spy transpile script.spy
 
 # Output to a file
-uv run pycli transpile script.spy -o script.py
+spy transpile script.spy -o script.py
 ```
 
-### Run `.spy` directly
-
-```powershell
-uv run pycli run script.spy
-# or shorthand:
-uv run pycli script.spy
-```
 
 ## Supported Language Features
 
