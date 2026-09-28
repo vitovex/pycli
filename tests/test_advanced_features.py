@@ -115,3 +115,32 @@ assert res.exit_code == 0
     exit_code = run_file(script_file)
     assert exit_code == 0
 
+
+def test_wait_all_multiple_background_jobs(tmp_path: Path):
+    """Verify wait_all() waits for multiple background jobs and returns all results."""
+    import sys
+    py = sys.executable.replace("\\", "/")
+    script = f'''j1 = $("{py}" -c "import time; time.sleep(0.05); print('JOB-1')") &
+j2 = $("{py}" -c "import time; time.sleep(0.05); print('JOB-2')") &
+j3 = $("{py}" -c "import time; time.sleep(0.05); print('JOB-3')") &
+
+results = wait_all(j1, j2, j3)
+assert len(results) == 3
+assert "JOB-1" in results[0].stdout
+assert "JOB-2" in results[1].stdout
+assert "JOB-3" in results[2].stdout
+assert all(r.exit_code == 0 for r in results)
+
+# Also test passing a list:
+j4 = $("{py}" -c "print('JOB-4')") &
+res_list = wait_all([j4])
+assert len(res_list) == 1
+assert "JOB-4" in res_list[0].stdout
+'''
+    script_file = tmp_path / "wait_all_test.spy"
+    script_file.write_text(script, encoding="utf-8")
+
+    exit_code = run_file(script_file)
+    assert exit_code == 0
+
+

@@ -194,19 +194,33 @@ if probe:
 else:
     print(f"Service offline (exit code: {probe.exit_code})")
 
-# 3. Background job: run long-running task concurrently
+# 3. Background jobs: run long-running tasks concurrently (&)
 job = $(mvn clean package) &
-print("Maven build started in background. Running other checks...")
-while job.is_running:
-    # do background work...
-    break
+print("Maven build started in background...")
 result = job.wait()
 print(f"Build finished with code: {result.exit_code}")
 
+# 3.1 Waiting for multiple parallel background jobs with wait_all(...)
+j_api = $(deploy-service api) &
+j_web = $(deploy-service web) &
+j_db  = $(deploy-service db) &
+
+# Accepts variable arguments wait_all(j1, j2, ...) or a list wait_all([j1, j2, ...]):
+all_results = wait_all(j_api, j_web, j_db)
+for res in all_results:
+    print(f"Completed: {res.command} (exit code: {res.exit_code})")
+
 # 4. Async / Await inside coroutines
-async def pull_repo():
-    res = await $(git pull origin main)
+async def pull_repo(name: str):
+    res = await $(git -C {name} pull origin main)
     return res.stdout
+
+# 4.1 Running multiple async commands in parallel with asyncio.gather
+async def update_all_microservices():
+    repos = ["frontend", "backend", "worker"]
+    # All pull commands execute concurrently:
+    results = await asyncio.gather(*(pull_repo(r) for r in repos))
+    print(f"Updated {len(results)} repositories simultaneously.")
 ```
 
 ---
@@ -460,6 +474,7 @@ The repository includes runnable `.spy` examples in the `examples/` directory:
 - [examples/demo.spy](examples/demo.spy): Basic overview demonstrating variable interpolation, list expansion, and status checking.
 - [examples/syntax_reference.spy](examples/syntax_reference.spy): Comprehensive, executable reference covering every syntax construct and execution mode.
 - [examples/advanced_features.spy](examples/advanced_features.spy): Practical demonstration of the 8 advanced productivity features (streaming, `.tee`, `.input(...)`, `cd()`/`env()`, background jobs `&`, safe mode `?`, quote semantics).
+- [examples/parallel_async_jobs.spy](examples/parallel_async_jobs.spy): Concurrent process orchestration showing how to launch multiple background jobs with `&`, await them all with `wait_all(...)`, and coordinate async coroutines with `asyncio.gather(...)`.
 - [examples/complex_devops.spy](examples/complex_devops.spy): Advanced pipeline orchestrator demonstrating Python dataclasses, object-oriented design, dynamic JSON parsing, strict mode error handling (`try/except CommandError`), and splat expansion.
 - [examples/modular_demo.spy](examples/modular_demo.spy) & [examples/devops_utils.spy](examples/devops_utils.spy): Modular multi-file architecture demonstrating how a `.spy` file can seamlessly import reusable functions, classes, and shell workflows from another `.spy` file or package.
 
@@ -468,6 +483,7 @@ Run them directly with `spy`:
 spy examples/demo.spy
 spy examples/syntax_reference.spy
 spy examples/advanced_features.spy
+spy examples/parallel_async_jobs.spy
 spy examples/complex_devops.spy
 spy examples/modular_demo.spy
 ```

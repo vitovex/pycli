@@ -17,6 +17,7 @@ from pycli.runtime import (
     run,
     run_bg,
     run_expanded,
+    wait_all,
 )
 from pycli.transformer import transpile
 
@@ -34,6 +35,7 @@ class SpyConsole(code.InteractiveConsole):
         locals.setdefault("run", run)
         locals.setdefault("run_expanded", run_expanded)
         locals.setdefault("run_bg", run_bg)
+        locals.setdefault("wait_all", wait_all)
         locals.setdefault("cd", cd)
         locals.setdefault("env", env)
         locals.setdefault("CommandResult", CommandResult)

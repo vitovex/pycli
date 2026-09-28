@@ -212,6 +212,16 @@ class BackgroundJob:
         )
         return self._result
 
+    @classmethod
+    def wait_all(
+        cls,
+        *jobs: BackgroundJob | Sequence[BackgroundJob],
+        timeout: float | None = None,
+    ) -> list[CommandResult]:
+        """Wait for multiple BackgroundJob instances to finish and return their CommandResults."""
+        return wait_all(*jobs, timeout=timeout)
+
+
 
 def run(
     command: str | Sequence[str],
@@ -417,6 +427,29 @@ def run_bg(
         env=env_dict,
     )
     return BackgroundJob(proc, cmd_str, start)
+
+
+def wait_all(
+    *jobs: BackgroundJob | Sequence[BackgroundJob],
+    timeout: float | None = None,
+) -> list[CommandResult]:
+    """Wait for all specified BackgroundJob instances to complete and return their CommandResults.
+
+    Accepts jobs as positional arguments or as a sequence:
+        results = wait_all(job1, job2, job3)
+        results = wait_all([job1, job2, job3])
+    """
+    flat_jobs: list[BackgroundJob] = []
+    for item in jobs:
+        if isinstance(item, (list, tuple, Sequence)) and not isinstance(item, (str, bytes)):
+            flat_jobs.extend(item)
+        elif isinstance(item, BackgroundJob):
+            flat_jobs.append(item)
+        else:
+            raise TypeError(f"Expected BackgroundJob or sequence of BackgroundJob, got {type(item).__name__}")
+
+    return [job.wait(timeout=timeout) for job in flat_jobs]
+
 
 
 async def async_run(

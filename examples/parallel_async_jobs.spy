@@ -1,0 +1,72 @@
+# examples/parallel_async_jobs.spy
+# Dimostrazione di esecuzione concorrente/parallela di comandi multipli:
+# 1. Background Jobs con & e comando wait_all(...)
+# 2. Coroutine asincrone con await $(...) e asyncio.gather(...)
+
+import asyncio
+import sys
+import time
+
+py = sys.executable
+
+print("================================================================")
+print("1. BACKGROUND JOBS CON '&' E ATTESA GLOBALE CON 'wait_all()'")
+print("================================================================")
+
+start_time = time.perf_counter()
+
+# Avvia 4 comandi in background simultaneamente in modo non bloccante:
+print("Lancio di 4 processi in background...")
+j1 = $({py} -c "import time; time.sleep(0.3); print('API Service: build OK')") &
+j2 = $({py} -c "import time; time.sleep(0.3); print('Worker Service: build OK')") &
+j3 = $({py} -c "import time; time.sleep(0.3); print('Frontend App: build OK')") &
+j4 = $({py} -c "import time; time.sleep(0.3); print('Docs Site: build OK')") &
+
+print(f"Stato immediato - j1 running: {j1.is_running}, j2 running: {j2.is_running}")
+
+# Attesa del completamento di TUTTI i job:
+# Accetta sia argomenti posizionali (wait_all(j1, j2, ...)) sia liste (wait_all([j1, j2, ...]))
+print("Attesa del completamento di tutti i processi (wait_all)...")
+results = wait_all(j1, j2, j3, j4)
+
+elapsed_bg = time.perf_counter() - start_time
+print(f"Tutti i 4 job sono terminati in {elapsed_bg:.2f}s (in parallelo!):")
+for res in results:
+    print(f"  -> {res.stdout.strip()} (exit_code={res.exit_code})")
+
+# Esempio con lista dinamica generata tramite list comprehension:
+print("\nLancio di un pool di 3 task da lista:")
+tasks = [$({py} -c "import time; time.sleep(0.1); print('Task-{i+1} completato')") & for i in range(3)]
+pool_results = wait_all(tasks)
+for res in pool_results:
+    print(" ", res.stdout.strip())
+
+
+print("\n================================================================")
+print("2. COROUTINE ASINCRONE CON 'await $(...)' E 'asyncio.gather()'")
+print("================================================================")
+
+async def check_endpoint(service_name: str, delay: float):
+    # Esegue il comando in modalità asincrona nativa all'interno dell'event loop
+    res = await $({py} -c "import time; time.sleep({delay}); print('Endpoint {service_name}: 200 OK')")
+    return service_name, res.stdout.strip(), res.duration
+
+async def main_async():
+    start_async = time.perf_counter()
+    print("Esecuzione parallela di 3 coroutine asincrone con asyncio.gather...")
+
+    # asyncio.gather pianifica l'esecuzione concorrente e attende che tutte finiscano:
+    completed = await asyncio.gather(
+        check_endpoint("Auth-Service", 0.25),
+        check_endpoint("Payment-Gateway", 0.25),
+        check_endpoint("Notification-Hub", 0.25),
+    )
+
+    elapsed_async = time.perf_counter() - start_async
+    print(f"Completate tutte in {elapsed_async:.2f}s:")
+    for name, stdout, duration in completed:
+        print(f"  [{name}] {stdout} (durata: {duration:.3f}s)")
+
+asyncio.run(main_async())
+
+print("\nTutti i test di concorrenza completati con successo!")

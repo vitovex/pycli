@@ -23,6 +23,7 @@ from pycli.runtime import (
     run,
     run_bg,
     run_expanded,
+    wait_all,
 )
 from pycli.transformer import transpile
 
@@ -37,6 +38,7 @@ __all__ = [
     "run",
     "run_expanded",
     "run_bg",
+    "wait_all",
     "async_run",
     "BackgroundJob",
     "cd",
@@ -81,6 +83,7 @@ def run_file(script_path: Path, script_args: list[str] | None = None) -> int:
         "__doc__": None,
         "cd": cd,
         "env": env,
+        "wait_all": wait_all,
     }
 
     try:
