@@ -1,3 +1,4 @@
+import sys
 import pytest
 from pycli.runtime import CommandError, CommandResult, DynamicObj, run, run_expanded, wrap_json
 
@@ -79,7 +80,7 @@ def test_command_result_json_list():
 
 
 def test_run_command_execution():
-    res = run("python -c \"print('hello pycli')\"")
+    res = run([sys.executable, "-c", "print('hello pycli')"])
     assert res.exit_code == 0
     assert "hello pycli" in res.stdout
     assert bool(res) is True
@@ -87,12 +88,12 @@ def test_run_command_execution():
 
 def test_run_command_strict_mode():
     with pytest.raises(CommandError) as exc_info:
-        run("python -c \"import sys; sys.exit(2)\"", check=True)
+        run([sys.executable, "-c", "import sys; sys.exit(2)"], check=True)
     assert exc_info.value.result.exit_code == 2
 
 
 def test_run_expanded():
-    res = run_expanded("python", "-c", "import sys; print(sys.argv[1:])", "arg1", ["arg2", "arg3"])
+    res = run_expanded(sys.executable, "-c", "import sys; print(sys.argv[1:])", "arg1", ["arg2", "arg3"])
     assert res.exit_code == 0
     assert "arg1" in res.stdout
     assert "arg2" in res.stdout
@@ -100,7 +101,7 @@ def test_run_expanded():
 
 
 def test_run_capture_false(capfd):
-    res = run("python -c \"print('streaming to terminal')\"", capture=False)
+    res = run([sys.executable, "-c", "print('streaming to terminal')"], capture=False)
     assert res.exit_code == 0
     assert res.stdout == ""
     captured = capfd.readouterr()

@@ -38,15 +38,17 @@ from pycli.transformer import Transformer
 
 def test_sec_01_shell_quote_helper():
     assert shell_quote("simple") == "simple"
-    assert shell_quote("file with spaces.txt") == "'file with spaces.txt'"
-    assert shell_quote("a; rm -rf /") == "'a; rm -rf /'"
+    expected_spaces = '"file with spaces.txt"' if sys.platform == "win32" else "'file with spaces.txt'"
+    assert shell_quote("file with spaces.txt") == expected_spaces
+    expected_cmd = '"a; rm -rf /"' if sys.platform == "win32" else "'a; rm -rf /'"
+    assert shell_quote("a; rm -rf /") == expected_cmd
     assert shell_quote(123) == "123"
 
 
 def test_sec_01_safe_interpolation_transpiles():
     source = "user_input = 'innocuo; echo pwned'\n$(cat {user_input})\n"
     py = transpile(source, auto_import=False)
-    assert 'run(f"cat {shell_quote(user_input)}", capture=False)' in py
+    assert 'run_expanded("cat", (user_input), capture=False)' in py
 
 
 def test_sec_01_unsafe_interpolation_flag():
@@ -58,15 +60,16 @@ def test_sec_01_unsafe_interpolation_flag():
 def test_sec_01_injection_prevention_at_runtime():
     malicious = "innocuo; echo pwned"
     quoted = shell_quote(malicious)
-    # shlex.quote safely single-quotes the argument, neutralizing semicolons, pipes, and subshells
-    assert quoted == "'innocuo; echo pwned'"
-    assert shell_quote("test && rm -rf /") == "'test && rm -rf /'"
+    expected_malicious = '"innocuo; echo pwned"' if sys.platform == "win32" else "'innocuo; echo pwned'"
+    assert quoted == expected_malicious
+    expected_and = '"test && rm -rf /"' if sys.platform == "win32" else "'test && rm -rf /'"
+    assert shell_quote("test && rm -rf /") == expected_and
 
 
 def test_sec_02_redirection_sanitization():
     source = "outfile = 'file con spazi.txt'\n$(git status > {outfile})\n"
     py = transpile(source, auto_import=False)
-    assert 'run(f"git status > {shell_quote(outfile)}", capture=False)' in py
+    assert 'run_expanded("git", "status", ShellOp(">"), (outfile), capture=False)' in py
 
 
 def test_sec_02_redirection_with_quotes_preserved():
@@ -79,13 +82,13 @@ def test_sec_02_redirection_with_quotes_preserved():
 def test_sec_02_expanded_redirection_sanitization():
     source = "items = ['a', 'b']\noutfile = 'path with spaces.txt'\n$(echo {*items} > {outfile})\n"
     py = transpile(source, auto_import=False)
-    assert 'f"> {shell_quote(outfile)}"' in py
+    assert 'ShellOp(">"), (outfile)' in py
 
 
 def test_sec_02_expanded_redirection_unsafe():
     source = "items = ['a', 'b']\noutfile = 'path with spaces.txt'\n$(echo {*items} > {outfile})\n"
     py = transpile(source, auto_import=False, unsafe_interpolation=True)
-    assert "shell_quote" not in py
+    assert 'ShellOp(">"), (outfile)' in py
 
 
 def test_sec_03_is_valid_interpolation_expr():
@@ -169,7 +172,7 @@ def test_trf_01_ternary_expression_context():
 def test_trf_01_comprehension_expression_context():
     source = "results = [$(process {item}) for item in items]\n"
     py = transpile(source, auto_import=False)
-    assert 'run(f"process {shell_quote(item)}") for item in items' in py
+    assert 'run_expanded("process", (item)) for item in items' in py
 
 
 def test_trf_02_token_immutability():
@@ -205,7 +208,7 @@ def test_trf_03_validate_valid_and_invalid():
 # =========================================================================
 
 def test_run_01_streaming_native(capfd):
-    res = run("python -c \"import sys; sys.stdout.write('realtime-test\\n')\"", capture=False)
+    res = run([sys.executable, "-c", "import sys; sys.stdout.write('realtime-test\\n')"], capture=False)
     assert res.exit_code == 0
     assert res.stdout == ""
     captured = capfd.readouterr()
@@ -214,7 +217,7 @@ def test_run_01_streaming_native(capfd):
 
 def test_run_02_timeout():
     with pytest.raises(CommandTimeoutError) as exc_info:
-        run("python -c \"import time; time.sleep(5)\"", timeout=0.3)
+        run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.3)
     assert exc_info.value.result.exit_code == -1
     assert "failed with exit code -1" in str(exc_info.value)
 
@@ -222,19 +225,44 @@ def test_run_02_timeout():
 def test_run_02_async_run_timeout():
     async def _test():
         with pytest.raises(CommandTimeoutError):
-            await async_run("python -c \"import time; time.sleep(5)\"", timeout=0.3)
+            await async_run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.3)
     asyncio.run(_test())
 
 
+def test_cor09_async_run_no_unraisable_warnings_on_lifecycle():
+    """COR-09: Verify async_run timeout, cancellation, and success do not leak unraisable loop warnings."""
+    async def _runner():
+        # 1. Success
+        res = await async_run([sys.executable, "-c", "print('ok')"])
+        assert res.exit_code == 0
+        assert "ok" in res.stdout
+
+        # 2. Timeout
+        with pytest.raises(CommandTimeoutError):
+            await async_run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.1)
+
+        # 3. Cancellation
+        task = asyncio.create_task(
+            async_run([sys.executable, "-c", "import time; time.sleep(5)"])
+        )
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    for _ in range(5):
+        asyncio.run(_runner())
+
+
 def test_run_03_custom_encoding():
-    cmd = 'python -c "import sys; sys.stdout.buffer.write(\'h\\xe9llo w\\xf6rld\'.encode(\'latin-1\'))"'
+    cmd = [sys.executable, "-c", "import sys; sys.stdout.buffer.write('h\\xe9llo w\\xf6rld'.encode('latin-1'))"]
     res = run(cmd, encoding="latin-1")
     assert res.exit_code == 0
     assert "héllo wörld" in res.stdout
 
 
 def test_run_04_background_job_wait_idempotent():
-    job = run_bg("python -c \"print('bg-finished')\"")
+    job = run_bg([sys.executable, "-c", "print('bg-finished')"])
     res1 = job.wait(timeout=5)
     assert res1.exit_code == 0
     assert "bg-finished" in res1.stdout
@@ -245,14 +273,14 @@ def test_run_04_background_job_wait_idempotent():
 
 
 def test_run_04_background_job_wait_timeout():
-    job = run_bg("python -c \"import time; time.sleep(5)\"")
+    job = run_bg([sys.executable, "-c", "import time; time.sleep(5)"])
     with pytest.raises(CommandTimeoutError):
         job.wait(timeout=0.3)
 
 
 def test_run_05_max_output_bytes():
     # Produce 200 bytes of 'A'
-    res = run("python -c \"print('A' * 200)\"", max_output_bytes=50)
+    res = run([sys.executable, "-c", "print('A' * 200)"], max_output_bytes=50)
     assert res.truncated is True
     assert len(res.stdout.encode("utf-8")) <= 50
 
@@ -330,24 +358,63 @@ def test_repl_01_parse_error_handling(capsys):
     assert "spy syntax error" in captured.err
 
 
-def test_repl_02_sigint_capture_true_handling(monkeypatch):
-    import subprocess
-    killed = False
+class _FakePopenForInterrupt:
+    def __init__(self, fail_wait: bool = False):
+        self.fail_wait = fail_wait
+        self.sigint_sent = False
+        self.waited = False
+        self.pid = 12345
+        self.returncode = None
 
-    def mock_kill(proc):
-        nonlocal killed
-        killed = True
-
-    def mock_communicate(self, *args, **kwargs):
+    def communicate(self, *args, **kwargs):
         raise KeyboardInterrupt()
 
+    def send_signal(self, sig: int):
+        import signal
+        if sig == signal.SIGINT:
+            self.sigint_sent = True
+
+    def wait(self, timeout: float | None = None):
+        import subprocess
+        self.waited = True
+        if self.fail_wait:
+            raise subprocess.TimeoutExpired("cmd", timeout or 2)
+        self.returncode = 0
+        return 0
+
+    def poll(self):
+        return self.returncode
+
+
+@pytest.mark.parametrize(
+    "target_platform,fail_wait,expect_sigint,expect_kill_tree",
+    [
+        ("win32", False, False, True),
+        ("linux", False, True, False),
+        ("linux", True, True, True),
+    ],
+)
+def test_repl_02_sigint_capture_true_handling(
+    monkeypatch, target_platform, fail_wait, expect_sigint, expect_kill_tree
+):
+    import subprocess
+
+    tree_killed = False
+    fake_proc = _FakePopenForInterrupt(fail_wait=fail_wait)
+
+    def mock_kill(proc):
+        nonlocal tree_killed
+        tree_killed = True
+
+    monkeypatch.setattr(sys, "platform", target_platform)
     monkeypatch.setattr("pycli.runtime._kill_process_tree", mock_kill)
-    monkeypatch.setattr(subprocess.Popen, "communicate", mock_communicate)
+    monkeypatch.setattr(subprocess, "Popen", lambda *args, **kwargs: fake_proc)
 
     with pytest.raises(KeyboardInterrupt):
         run("echo test", capture=True)
 
-    assert killed is True
+    assert fake_proc.sigint_sent is expect_sigint
+    assert tree_killed is expect_kill_tree
 
 
 # =========================================================================
@@ -387,5 +454,5 @@ def test_obs_02_original_expression_in_command_error():
 
 def test_obs_02_set_current_expression_context():
     with set_current_expression("$(test command)"):
-        res = run("python -c \"print('test')\"")
+        res = run([sys.executable, "-c", "print('test')"])
         assert res.original_expression == "$(test command)"

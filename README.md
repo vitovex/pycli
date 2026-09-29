@@ -12,6 +12,7 @@ A lightweight Python-compatible DevOps DSL that extends Python with first-class 
 - **Zero Custom VM**: Transpiled directly to standard Python and executed on standard CPython.
 
 See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md).
+For planned parser and pipeline improvements, see [the operational task backlog](docs/task-miglioramenti-parser.md).
 
 ## Example
 

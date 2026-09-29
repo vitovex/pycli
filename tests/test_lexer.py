@@ -71,3 +71,44 @@ def test_lexer_unclosed_command_raises():
     lexer = Lexer(source)
     with pytest.raises(LexerError):
         lexer.tokenize()
+
+
+def test_lexer_consecutive_commands_offsets():
+    # Verify exact column/line of consecutive commands with modifiers
+    source = "$(echo 1)!\n$(echo 2)\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+    assert tokens[0].type == TokenType.COMMAND_EXPR
+    assert tokens[0].line == 1
+    assert tokens[0].column == 1
+    assert tokens[0].strict is True
+
+    # Token 1 is newline
+    assert tokens[1].type == TokenType.PYTHON_CODE
+    assert tokens[1].value == "\n"
+
+    # Token 2 is the second command, must be at line 2, col 1
+    assert tokens[2].type == TokenType.COMMAND_EXPR
+    assert tokens[2].line == 2
+    assert tokens[2].column == 1
+
+
+def test_lexer_modifier_with_spaces():
+    source = "$(cmd)   !\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+    assert tokens[0].strict is True
+    # Next token is newline on line 1, column 11
+    assert tokens[1].line == 1
+    assert tokens[1].column == 11
+
+
+def test_lexer_bitwise_and_not_background():
+    # In 'res = $(cmd) & mask', '&' is followed by 'mask' so it's a Python operator
+    source = "res = $(cmd) & mask\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+    assert tokens[1].type == TokenType.COMMAND_EXPR
+    assert tokens[1].background is False
+    assert tokens[2].type == TokenType.PYTHON_CODE
+    assert tokens[2].value.startswith(" & mask")

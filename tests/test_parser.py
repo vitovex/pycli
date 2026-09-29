@@ -1,5 +1,8 @@
+import pytest
+
 from pycli.parser import (
     CommandParser,
+    ParseError,
     InterpolationNode,
     PipelineNode,
     RedirectionNode,
@@ -78,3 +81,92 @@ def test_parse_subcommand():
     assert len(sub_pipeline.commands) == 1
     sub_cmd = sub_pipeline.commands[0]
     assert [p.value for p in sub_cmd.parts if isinstance(p, WordNode)] == ["git", "branch", "--show-current"]
+
+
+def test_parse_dollar_variables_and_termination_par02():
+    # Verify echo $HOME, bare $, and mixed variables terminate and preserve words
+    parser = CommandParser("echo $HOME $? $ $1 prefix$VAR")
+    node = parser.parse()
+    cmd = node.pipeline.commands[0]
+    words = [p.value for p in cmd.parts if isinstance(p, WordNode)]
+    assert words == ["echo", "$HOME", "$?", "$", "$1", "prefix$VAR"]
+
+
+def test_parse_quotes_with_delimiters_par03():
+    # Delimiters inside quotes must not break pipeline or subcommands
+    parser = CommandParser('echo "a | b" $(echo ")") {get_val("{")}')
+    node = parser.parse()
+    cmd = node.pipeline.commands[0]
+    assert len(node.pipeline.commands) == 1
+    # Check subcommand was parsed properly
+    subcmds = [p for p in cmd.parts if isinstance(p, SubcommandNode)]
+    assert len(subcmds) == 1
+    assert subcmds[0].raw == '$(echo ")")'
+
+
+def test_parse_subcommand_preserves_raw_par05():
+    parser = CommandParser("echo $(printf x) {*items}")
+    node = parser.parse()
+    cmd = node.pipeline.commands[0]
+    subcmds = [p for p in cmd.parts if isinstance(p, SubcommandNode)]
+    assert len(subcmds) == 1
+    assert subcmds[0].raw == "$(printf x)"
+
+
+def test_parse_diagnostics_par06():
+    import pytest
+    from pycli.parser import ParseError
+
+    # Empty pipeline stage
+    with pytest.raises(ParseError, match="Empty pipeline stage"):
+        CommandParser("echo a | | cat").parse()
+
+    with pytest.raises(ParseError, match="Empty pipeline stage"):
+        CommandParser("echo a |").parse()
+
+    # Redirection missing target
+    with pytest.raises(ParseError, match="Missing target"):
+        CommandParser("echo >").parse()
+
+    with pytest.raises(ParseError, match="Missing target"):
+        CommandParser("echo > | cat").parse()
+
+    # Empty splat
+    with pytest.raises(ParseError, match="Empty splat"):
+        CommandParser("rm {*}").parse()
+
+    # Unclosed subcommand
+    with pytest.raises(ParseError, match="Unclosed"):
+        CommandParser("echo $(git status").parse()
+
+
+def test_cor05_parse_error_precise_locations():
+    from pycli import transpile
+
+    # 1. Pipeline vuota su seconda riga
+    source_pipe = "a = 1\n$(echo | | cat)\n"
+    with pytest.raises(ParseError) as exc_info:
+        transpile(source_pipe)
+    assert exc_info.value.line == 2
+    assert exc_info.value.column == 10
+
+    # 2. Redirection target mancante su seconda riga
+    source_redir = "a = 1\n$(echo >)\n"
+    with pytest.raises(ParseError) as exc_info:
+        transpile(source_redir)
+    assert exc_info.value.line == 2
+    assert exc_info.value.column == 8
+
+    # 3. Splat vuota su seconda riga
+    source_splat = "a = 1\n$(rm {*})\n"
+    with pytest.raises(ParseError) as exc_info:
+        transpile(source_splat)
+    assert exc_info.value.line == 2
+    assert exc_info.value.column == 6
+
+    # 4. Multiline command
+    source_multi = "x = 10\n$(\n  echo | | cat\n)\n"
+    with pytest.raises(ParseError) as exc_info:
+        transpile(source_multi)
+    assert exc_info.value.line == 3
+    assert exc_info.value.column == 10

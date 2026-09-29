@@ -277,18 +277,35 @@ class Lexer:
 
         if idx < self.length:
             nxt = self.source[idx]
+            is_adjacent = (idx == self.pos)
             if nxt == "!":
-                self.pos = idx + 1
-                self.col += (idx + 1 - self.pos)
+                while self.pos < idx:
+                    self._advance()
+                self._advance()
                 strict = True
             elif nxt == "?":
-                self.pos = idx + 1
-                self.col += (idx + 1 - self.pos)
+                while self.pos < idx:
+                    self._advance()
+                self._advance()
                 safe = True
             elif nxt == "&" and (idx + 1 >= self.length or self.source[idx + 1] != "&"):
-                self.pos = idx + 1
-                self.col += (idx + 1 - self.pos)
-                background = True
+                is_bg = is_adjacent
+                if not is_bg:
+                    rem_idx = idx + 1
+                    while rem_idx < self.length and self.source[rem_idx] in (" ", "\t"):
+                        rem_idx += 1
+                    if (
+                        rem_idx >= self.length
+                        or self.source[rem_idx] in ("\n", "\r", "#", ";", "]", ")", "}", ",")
+                        or self.source[rem_idx : rem_idx + 4] == "for "
+                        or self.source[rem_idx : rem_idx + 3] == "for"
+                    ):
+                        is_bg = True
+                if is_bg:
+                    while self.pos < idx:
+                        self._advance()
+                    self._advance()
+                    background = True
 
 
         raw_cmd = "".join(content_buf)

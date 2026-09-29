@@ -106,8 +106,9 @@ saved_text = Path("temp_demo.txt").read_text(encoding="utf-8").strip()
 print("Letto da file rediretto:", saved_text)
 Path("temp_demo.txt").unlink()
 
-# 6.3 Subcommands ($(...)):
-res_sub = $(echo Current py version: $({py} -c "import sys; print(sys.version.split()[0])"))
+# 6.3 Subcommands / Chaining portabile: assegnare prima il comando interno e passare il valore:
+py_ver = $({py} -c "import sys; print(sys.version.split()[0])").text
+res_sub = $(echo Current py version: {py_ver})
 print(res_sub.stdout.strip())
 
 # 6.4 Verità booleana (Truthiness):

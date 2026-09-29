@@ -13,6 +13,8 @@ from pathlib import Path
 
 from pycli.highlighter import highlight_python, should_colorize
 from pycli.importer import SpyFinder, SpyLoader, install_import_hook, uninstall_import_hook
+from pycli.lexer import LexerError
+from pycli.parser import ParseError
 from pycli.repl import start_repl
 from pycli.runtime import (
     BackgroundJob,
@@ -20,11 +22,14 @@ from pycli.runtime import (
     CommandResult,
     CommandTimeoutError,
     DynamicObj,
+    ShellOp,
     async_run,
+    async_run_expanded,
     cd,
     env,
     run,
     run_bg,
+    run_bg_expanded,
     run_expanded,
     shell_quote,
     wait_all,
@@ -42,6 +47,8 @@ def get_max_source_size() -> int:
 __all__ = [
     "transpile",
     "TranspilerError",
+    "ParseError",
+    "LexerError",
     "highlight_python",
     "install_import_hook",
     "uninstall_import_hook",
@@ -50,12 +57,15 @@ __all__ = [
     "run",
     "run_expanded",
     "run_bg",
+    "run_bg_expanded",
     "wait_all",
     "async_run",
+    "async_run_expanded",
     "BackgroundJob",
     "cd",
     "env",
     "shell_quote",
+    "ShellOp",
     "start_repl",
     "CommandResult",
     "CommandError",
@@ -143,7 +153,7 @@ def run_file(
             "Warning: Executing .spy script with full user privileges. pycli does not sandbox execution.\n"
         )
 
-    install_import_hook()
+    install_import_hook(unsafe_interpolation=unsafe_interpolation, validate=validate)
 
     # Ensure the script's directory is at the beginning of sys.path
     script_dir = str(resolved_path.parent)
@@ -155,7 +165,7 @@ def run_file(
     transformer = Transformer(auto_import=True, unsafe_interpolation=unsafe_interpolation)
     try:
         py_code = transformer.transform(source, validate=validate)
-    except TranspilerError as e:
+    except (TranspilerError, LexerError, ParseError, ValueError) as e:
         sys.stderr.write(f"Error: {e}\n")
         return 1
 
@@ -174,6 +184,7 @@ def run_file(
         "run_bg": run_bg,
         "async_run": async_run,
         "shell_quote": shell_quote,
+        "ShellOp": ShellOp,
         "CommandResult": CommandResult,
         "CommandError": CommandError,
         "CommandTimeoutError": CommandTimeoutError,
@@ -298,7 +309,7 @@ def main(argv: list[str] | None = None) -> None:
                 validate=args.validate,
                 unsafe_interpolation=args.unsafe_interpolation,
             )
-        except (ValueError, TranspilerError) as e:
+        except (ValueError, TranspilerError, LexerError, ParseError) as e:
             sys.stderr.write(f"Error: {e}\n")
             sys.exit(1)
         if not out_path:

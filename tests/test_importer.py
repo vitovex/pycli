@@ -99,3 +99,20 @@ def test_uninstall_import_hook():
     # Reinstall for other tests
     install_import_hook()
 
+
+def test_importer_cache_with_options_int01(tmp_path: Path):
+    from pycli.importer import _get_cached_code
+
+    spy_file = tmp_path / "mod.spy"
+    source = "def run_cmd():\n    return $(echo hi).text\n"
+    spy_file.write_text(source, encoding="utf-8")
+
+    # Get cached code with default options
+    code1 = _get_cached_code(spy_file, source, unsafe_interpolation=False)
+    # Get cached code with unsafe_interpolation=True
+    code2 = _get_cached_code(spy_file, source, unsafe_interpolation=True)
+
+    cache_dir = tmp_path / "__pycache__"
+    pyc_files = list(cache_dir.glob("*.pyc"))
+    # Two distinct pyc files should be generated because options differ
+    assert len(pyc_files) == 2

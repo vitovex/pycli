@@ -20,10 +20,16 @@ from pycli.transformer import transpile
 STDLIB_NAMES = getattr(sys, "stdlib_module_names", frozenset())
 
 
-def _get_cached_code(spy_path: Path, source: str) -> Any:
+def _get_cached_code(
+    spy_path: Path,
+    source: str,
+    unsafe_interpolation: bool = False,
+    validate: bool = False,
+) -> Any:
     """Retrieve compiled bytecode from __pycache__ or compile and cache it."""
     cache_dir = spy_path.parent / "__pycache__"
-    src_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()[:16]
+    cache_key_data = f"{source}\0unsafe={unsafe_interpolation}".encode("utf-8")
+    src_hash = hashlib.sha256(cache_key_data).hexdigest()[:16]
     cache_file = cache_dir / f"{spy_path.stem}.spy-{src_hash}.pyc"
 
     if cache_file.is_file():
@@ -33,7 +39,7 @@ def _get_cached_code(spy_path: Path, source: str) -> Any:
         except Exception:
             pass
 
-    py_code = transpile(source)
+    py_code = transpile(source, unsafe_interpolation=unsafe_interpolation, validate=validate)
     compiled = compile(py_code, str(spy_path), "exec")
 
     try:
@@ -49,9 +55,17 @@ def _get_cached_code(spy_path: Path, source: str) -> Any:
 class SpyLoader(importlib.abc.Loader):
     """Loader that transpiles .spy code to standard Python and executes it."""
 
-    def __init__(self, fullname: str, path: str | Path) -> None:
+    def __init__(
+        self,
+        fullname: str,
+        path: str | Path,
+        unsafe_interpolation: bool = False,
+        validate: bool = False,
+    ) -> None:
         self.fullname = fullname
         self.path = str(Path(path).resolve())
+        self.unsafe_interpolation = unsafe_interpolation
+        self.validate = validate
 
     def create_module(self, spec: importlib.machinery.ModuleSpec):
         """Use default Python module creation."""
@@ -64,7 +78,12 @@ class SpyLoader(importlib.abc.Loader):
             raise FileNotFoundError(f"Cannot import .spy module from non-existent path: {self.path}")
 
         source = filepath.read_text(encoding="utf-8")
-        compiled = _get_cached_code(filepath, source)
+        compiled = _get_cached_code(
+            filepath,
+            source,
+            unsafe_interpolation=self.unsafe_interpolation,
+            validate=self.validate,
+        )
 
         module.__file__ = str(filepath)
         module.__loader__ = self
@@ -87,6 +106,14 @@ class SpyLoader(importlib.abc.Loader):
 
 class SpyFinder(importlib.abc.MetaPathFinder):
     """MetaPathFinder that locates .spy files and packages along search paths."""
+
+    def __init__(
+        self,
+        unsafe_interpolation: bool = False,
+        validate: bool = False,
+    ) -> None:
+        self.unsafe_interpolation = unsafe_interpolation
+        self.validate = validate
 
     def find_spec(
         self,
@@ -119,7 +146,12 @@ class SpyFinder(importlib.abc.MetaPathFinder):
             module_file = (dir_path / f"{subname}.spy").resolve()
             # Ensure no path traversal outside search directory
             if module_file.is_file() and str(module_file).startswith(str(dir_path)):
-                loader = SpyLoader(fullname, module_file)
+                loader = SpyLoader(
+                    fullname,
+                    module_file,
+                    unsafe_interpolation=self.unsafe_interpolation,
+                    validate=self.validate,
+                )
                 return importlib.util.spec_from_loader(
                     fullname,
                     loader,
@@ -130,7 +162,12 @@ class SpyFinder(importlib.abc.MetaPathFinder):
             pkg_dir = (dir_path / subname).resolve()
             init_file = (pkg_dir / "__init__.spy").resolve()
             if init_file.is_file() and str(init_file).startswith(str(dir_path)):
-                loader = SpyLoader(fullname, init_file)
+                loader = SpyLoader(
+                    fullname,
+                    init_file,
+                    unsafe_interpolation=self.unsafe_interpolation,
+                    validate=self.validate,
+                )
                 spec = importlib.util.spec_from_loader(
                     fullname,
                     loader,
@@ -148,11 +185,20 @@ class SpyFinder(importlib.abc.MetaPathFinder):
 _spy_finder: SpyFinder | None = None
 
 
-def install_import_hook() -> SpyFinder:
+def install_import_hook(
+    unsafe_interpolation: bool = False,
+    validate: bool = False,
+) -> SpyFinder:
     """Install the .spy import hook into sys.meta_path if not already present."""
     global _spy_finder
     if _spy_finder is None:
-        _spy_finder = SpyFinder()
+        _spy_finder = SpyFinder(
+            unsafe_interpolation=unsafe_interpolation,
+            validate=validate,
+        )
+    else:
+        _spy_finder.unsafe_interpolation = unsafe_interpolation
+        _spy_finder.validate = validate
 
     if _spy_finder not in sys.meta_path:
         # Insert before standard PathFinder so .spy files can be loaded

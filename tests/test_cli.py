@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from pycli import run_file, transpile_file
 
@@ -31,10 +32,12 @@ def test_cli_run_file(tmp_path: Path, capsys):
 
 def test_cli_run_file_with_json_and_interpolation(tmp_path: Path, capsys):
     spy_file = tmp_path / "script_json.spy"
+    py_exe = sys.executable.replace("\\", "/")
     spy_file.write_text(
-        "import json\n"
+        "import json, sys\n"
+        f"py = {py_exe!r}\n"
         "val = 'world'\n"
-        "msg = $(python -c \"import json; print(json.dumps({'greet': 'hello world'}))\").json\n"
+        "msg = $({py} -c \"import json; print(json.dumps({'greet': 'hello world'}))\").json\n"
         "print('GREETING:', msg.greet)\n",
         encoding="utf-8",
     )
@@ -59,3 +62,23 @@ def test_cli_run_complex_devops_example(capsys):
     assert "Service IP: 10.0.9090.1 | Health: UP (Replicas: 2)" in captured.out
     assert "Successfully caught CommandError with code 42" in captured.out
     assert "DevOps Pipeline completed successfully!" in captured.out
+
+
+def test_cli_diagnostics_unclosed_and_invalid_dsl_dx02(tmp_path: Path, capsys):
+    # Unclosed command expr
+    unclosed_file = tmp_path / "unclosed.spy"
+    unclosed_file.write_text("x = $(git status\n", encoding="utf-8")
+    exit_code = run_file(unclosed_file)
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Error:" in captured.err
+    assert "Unclosed" in captured.err
+
+    # Invalid DSL syntax (empty stage)
+    invalid_file = tmp_path / "invalid.spy"
+    invalid_file.write_text("$(echo 1 | | cat)\n", encoding="utf-8")
+    exit_code = run_file(invalid_file)
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Error:" in captured.err
+    assert "Empty pipeline stage" in captured.err

@@ -67,7 +67,7 @@ class DeploymentManager:
             $(echo --- Deploying {spec.describe()} ---)
 
             # Subprocess CLI outputs structured JSON to stdout
-            result = $(python -c "import json, sys; print(json.dumps(dict(service=sys.argv[1], cluster_ip='10.0.' + sys.argv[2] + '.1', details=dict(health='UP', replicas_running=int(sys.argv[3])))))" {spec.name} {spec.port} {spec.replicas}).json
+            result = $({sys.executable} -c "import json, sys; print(json.dumps(dict(service=sys.argv[1], cluster_ip='10.0.' + sys.argv[2] + '.1', details=dict(health='UP', replicas_running=int(sys.argv[3])))))" {spec.name} {spec.port} {spec.replicas}).json
 
             print(f"Service IP: {result.cluster_ip} | Health: {result.details.health} (Replicas: {result.details.replicas_running})")
             deployed.append(result.service)
@@ -77,7 +77,7 @@ class DeploymentManager:
     def clean_temporary_files(self, file_patterns: List[str]) -> None:
         """Demonstrate splat list expansion {*patterns}."""
         $(echo Cleaning artifacts matching: {*file_patterns})
-        cmd_result = $(python -c "import sys; print('Validated args count:', len(sys.argv[1:]))" {*file_patterns})
+        cmd_result = $({sys.executable} -c "import sys; print('Validated args count:', len(sys.argv[1:]))" {*file_patterns})
         print(cmd_result.stdout.strip())
 
     def test_strict_mode_handling(self) -> None:
@@ -85,7 +85,7 @@ class DeploymentManager:
         print("Testing strict mode execution with expected failure...")
         try:
             # Non-zero exit code with ! raises CommandError
-            $(python -c "import sys; sys.stderr.write('Simulated failure'); sys.exit(42)")!
+            $({sys.executable} -c "import sys; sys.stderr.write('Simulated failure'); sys.exit(42)")!
         except CommandError as err:
             print(f"Successfully caught CommandError with code {err.result.exit_code}: {err.result.stderr.strip()}")
 
