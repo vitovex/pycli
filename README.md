@@ -1,5 +1,9 @@
 # pycli
 
+[![CI Pipeline](https://github.com/vitovex/pycli/actions/workflows/ci.yml/badge.svg)](https://github.com/vitovex/pycli/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)](https://github.com/vitovex/pycli/actions)
+
 A lightweight Python-compatible DevOps DSL that extends Python with first-class shell command execution.
 
 ## Overview
@@ -8,11 +12,11 @@ A lightweight Python-compatible DevOps DSL that extends Python with first-class 
 - **Python Readability**: Natural Python syntax and standard ecosystem compatibility.
 - **PowerShell-like Command Invocation**: Run shell commands directly with `$(...)`.
 - **Bash-like Command Composition**: Pipelines (`|`), redirections (`>`, `>>`, `<`), and subcommands.
-- **Native Object Handling**: Seamless integration with Python objects, string interpolation `{var}`, and list expansion `{**files}`.
+- **Native Object Handling**: Seamless integration with Python objects, string interpolation `{var}`, and list expansion (`{*files}`).
+- **Cross-Platform Compatibility**: Tested and verified across Linux (`ubuntu-latest`), macOS (`macos-latest`), and Windows (`windows-latest`).
 - **Zero Custom VM**: Transpiled directly to standard Python and executed on standard CPython.
 
 See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md).
-For planned parser and pipeline improvements, see [the operational task backlog](docs/task-miglioramenti-parser.md).
 
 ## Example
 
@@ -538,6 +542,7 @@ spy examples/modular_demo.spy
 
 - Python `>= 3.12`
 - `uv` package manager
+- Supported Platforms: Linux, macOS, and Windows (all tested in CI)
 
 ### Development Setup
 

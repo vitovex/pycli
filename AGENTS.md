@@ -25,7 +25,7 @@ Python Source (using pycli runtime: run(), CommandResult)
    CPython
 ```
 
-### Key Language Features to Implement
+### Key Implemented Features
 
 1. **Command Expressions**: `$(git status)` or `vms = $(az vm list)`
 2. **Statement & Expression Forms**: Standalone commands or assigned results.
@@ -34,10 +34,14 @@ Python Source (using pycli runtime: run(), CommandResult)
 5. **Subcommands**: `$(echo $(git branch --show-current))`.
 6. **Pipelines**: `$(kubectl get pods | grep api)`.
 7. **Redirection**: `$(git status > status.txt)`.
-8. **CommandResult Object**: `.stdout`, `.stderr`, `.exit_code`, `.command`, `.duration`.
-9. **Truthiness**: `if $(git diff --quiet): ...` (truthy if exit_code == 0).
-10. **Structured Output (JSON)**: `vms = $(az vm list).json` with dynamic attribute access (`vm.name`).
+8. **CommandResult Object**: `.stdout`, `.stderr`, `.exit_code`, `.command`, `.duration`, `.lines`, `.text`, `.tee`, `.input(...)`.
+9. **Truthiness & Safe Probing**: `if $(git diff --quiet): ...` (truthy if exit_code == 0) and safe mode `$(cmd)?`.
+10. **Structured Output (JSON/YAML)**: `vms = $(az vm list).json` with dynamic attribute access (`vm.name`).
 11. **Strict Mode**: `$(git status)!` raises on non-zero exit code (`run(..., check=True)`).
+12. **Context Managers**: `cd(...)` for temporary working directory and `env(...)` for scoped environment variables.
+13. **Background Jobs & Async**: `job = $(long_task) &` with `job.wait()` and `wait_all(...)`.
+14. **Modular Architecture**: Native import hook (`pycli.importer`) to import `.spy` files directly into other scripts.
+15. **Interactive REPL & Syntax Highlighting**: Terminal highlighter and `spy repl`.
 
 ---
 
@@ -46,6 +50,7 @@ Python Source (using pycli runtime: run(), CommandResult)
 - **Package Manager**: `uv`
 - **Python Version**: `>= 3.12`
 - **Testing**: `pytest`
+- **CI Matrix**: GitHub Actions runs on `ubuntu-latest`, `macos-latest`, and `windows-latest`
 - **Virtual Environment**: Managed via `uv` (`uv sync`, `uv run pytest`, `uv run pycli`)
 
 ### Common Commands
@@ -54,11 +59,13 @@ Python Source (using pycli runtime: run(), CommandResult)
 # Sync dependencies
 uv sync
 
-# Run tests
+# Run all tests (138+ unit, integration, and security tests)
 uv run pytest
 
 # Run the CLI
 uv run pycli
+# or via short alias
+uv run spy
 ```
 
 ---
@@ -74,11 +81,19 @@ uv run pycli
 ├── AGENTS.md
 ├── docs/
 │   └── pycli-grammar.md    # Language and grammar specification
-└── src/
-    └── pycli/
-        ├── __init__.py     # Package entrypoint & CLI
-        ├── lexer.py        # Tokenizer / scanner (to be implemented)
-        ├── parser.py       # Grammar parser (to be implemented)
-        ├── transformer.py  # AST to Python source transformer (to be implemented)
-        └── runtime.py      # Runtime support: run(), CommandResult, DynamicObj
+├── editors/
+│   ├── vscode/             # VS Code & Antigravity IDE syntax extension & snippets
+│   └── notepadplusplus/    # Notepad++ UDL definition
+├── examples/               # Executable .spy demonstration scripts
+├── src/
+│   └── pycli/
+│       ├── __init__.py     # Package entrypoint & CLI dispatcher (spy / pycli)
+│       ├── lexer.py        # Tokenizer / scanner for $(...) and interpolation
+│       ├── parser.py       # Grammar parser and AST node builder
+│       ├── transformer.py  # AST to Python source transformer
+│       ├── runtime.py      # Runtime support: run(), CommandResult, DynamicObj, cd, env
+│       ├── importer.py     # PEP 302/451 import hook for loading .spy modules
+│       ├── highlighter.py  # ANSI syntax highlighting for terminal & CLI
+│       └── repl.py         # Interactive REPL session with live transpilation
+└── tests/                  # Test suite covering lexer, parser, runtime, CLI, security
 ```

@@ -1,6 +1,6 @@
 """Compliance and pipeline end-to-end regression tests (QA-01).
 
-Tests the table of cases defined in pycli-grammar.md and task-miglioramenti-parser.md.
+Tests the table of cases defined in pycli-grammar.md.
 """
 
 from __future__ import annotations
