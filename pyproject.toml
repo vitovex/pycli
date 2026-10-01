@@ -1,6 +1,6 @@
 [project]
 name = "pycli-dsl"
-version = "0.1.0"
+version = "0.1.1"
 description = "A Python-compatible DevOps DSL transpiler extending Python with first-class shell command execution"
 readme = "README.md"
 license = { text = "MIT" }
