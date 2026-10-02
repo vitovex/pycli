@@ -1,6 +1,7 @@
 # pycli
 
 [![CI Pipeline](https://github.com/vitovex/pycli/actions/workflows/ci.yml/badge.svg)](https://github.com/vitovex/pycli/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/pycli-dsl.svg)](https://pypi.org/project/pycli-dsl/)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macos%20%7C%20windows-lightgrey.svg)](https://github.com/vitovex/pycli/actions)
 
@@ -78,19 +79,50 @@ if status:
     print("Health check passed successfully!")
 ```
 
-## CLI Usage
+## Installation
 
-### Global Installation (Centralized Command)
+`pycli` is published on PyPI as [**`pycli-dsl`**](https://pypi.org/project/pycli-dsl/).
 
-You can install `pycli` globally into your system `PATH` using `uv tool`:
+You can install and use it directly without cloning or downloading this repository:
+
+### Standalone CLI Tool (Recommended)
+
+To install `spy` and `pycli` globally into your system `PATH`:
+
+```powershell
+# Using uv (fastest)
+uv tool install pycli-dsl
+
+# Or using pipx
+pipx install pycli-dsl
+```
+
+This registers two commands globally in your terminal:
+- **`spy`**: Ultra-concise runner for `.spy` scripts (`spy script.spy`).
+- **`pycli`**: The full CLI tool with subcommands (`transpile`, `run`, `repl`).
+
+### In a Python Environment
+
+To install `pycli-dsl` into an existing Python environment or project:
+
+```powershell
+pip install pycli-dsl
+
+# Or with uv
+uv add pycli-dsl
+```
+
+### From Source (Local Development)
+
+If you clone the repository for development:
 
 ```powershell
 uv tool install --editable . --force
 ```
 
-This registers two commands globally on your machine:
-- **`spy`**: Ultra-concise runner for `.spy` scripts.
-- **`pycli`**: The full CLI tool with subcommands.
+---
+
+## CLI Usage
 
 Once installed, you can run `.spy` scripts from **any folder or terminal**:
 ```powershell
@@ -99,7 +131,7 @@ spy script.spy
 pycli script.spy
 ```
 
-### Direct Script Execution without Global Install
+### Direct Script Execution from Source Repo
 
 If working inside this repository with `uv`:
 ```powershell
