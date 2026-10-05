@@ -25,3 +25,9 @@ with cd("docs"):
 # 5. Truthiness in conditional statements
 if $(git --version):
     print("Git executable verified successfully!")
+
+# 6. First-class environment variables ($VARNAME)
+$DEMO_ENV = "production"
+$DEMO_REGION = "eu-central-1"
+$(python -c "import os; print(f'Subprocess env: {os.environ.get(\"DEMO_ENV\")} ({os.environ.get(\"DEMO_REGION\")})')")
+

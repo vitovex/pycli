@@ -140,6 +140,12 @@ class InterpolationNode(CommandPartNode):
 
 
 @dataclass
+class EnvVarNode(CommandPartNode):
+    """Represents a $VARNAME environment variable reference inside a $(...) command."""
+    name: str
+
+
+@dataclass
 class SplatNode(CommandPartNode):
     expression: str
 
@@ -167,7 +173,7 @@ class CommandNode(ASTNode):
 
     def has_interpolation(self) -> bool:
         return any(
-            isinstance(part, (InterpolationNode, SplatNode))
+            isinstance(part, (InterpolationNode, SplatNode, EnvVarNode))
             or (isinstance(part, RedirectionNode) and "{" in part.target and "}" in part.target)
             or (isinstance(part, (WordNode, StringNode)) and "{" in part.value and "}" in part.value)
             for part in self.parts
@@ -293,6 +299,15 @@ class CommandParser:
                 buf.append(text[start_s:i])
                 continue
 
+            # $VARNAME inside pipeline — append as-is to current stage buffer
+            if ch == "$" and i + 1 < n and text[i + 1] != "(" and (text[i + 1].isupper() or text[i + 1] == "_"):
+                buf.append(ch)
+                i += 1
+                while i < n and (text[i].isalnum() or text[i] == "_"):
+                    buf.append(text[i])
+                    i += 1
+                continue
+
             # Pipeline separator '|'
             if ch == "|":
                 stage_str = "".join(buf)
@@ -369,6 +384,31 @@ class CommandParser:
                 redir_node = RedirectionNode(operator=op, target=target)
                 redir_node.has_leading_space = had_space
                 parts.append(redir_node)
+                had_space = False
+                continue
+
+            # Check $VARNAME environment variable (uppercase or underscore, not followed by '(')
+            if (
+                cmd_text[i] == "$"
+                and i + 1 < n
+                and cmd_text[i + 1] != "("
+                and (cmd_text[i + 1].isupper() or cmd_text[i + 1] == "_")
+            ):
+                i += 1  # skip '$'
+                var_start = i
+                while i < n and (cmd_text[i].isalnum() or cmd_text[i] == "_"):
+                    i += 1
+                var_name = cmd_text[var_start:i]
+                if not var_name:
+                    # bare '$' with no valid identifier — treat as word char
+                    w_node = WordNode(value="$")
+                    w_node.has_leading_space = had_space
+                    parts.append(w_node)
+                    had_space = False
+                    continue
+                env_node = EnvVarNode(name=var_name)
+                env_node.has_leading_space = had_space
+                parts.append(env_node)
                 had_space = False
                 continue
 
@@ -454,6 +494,11 @@ class CommandParser:
                 and not cmd_text[i].isspace()
                 and cmd_text[i] not in ("|", ">", "<", "{", "'", '"')
                 and cmd_text[i : i + 2] != "$("
+                and not (
+                    cmd_text[i] == "$"
+                    and i + 1 < n
+                    and (cmd_text[i + 1].isupper() or cmd_text[i + 1] == "_")
+                )
             ):
                 i += 1
             word = cmd_text[start:i]

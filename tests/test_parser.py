@@ -2,6 +2,7 @@ import pytest
 
 from pycli.parser import (
     CommandParser,
+    EnvVarNode,
     ParseError,
     InterpolationNode,
     PipelineNode,
@@ -84,12 +85,14 @@ def test_parse_subcommand():
 
 
 def test_parse_dollar_variables_and_termination_par02():
-    # Verify echo $HOME, bare $, and mixed variables terminate and preserve words
+    # Verify bare $, non-env dollar variables terminate and preserve words, and env vars are parsed as EnvVarNode
     parser = CommandParser("echo $HOME $? $ $1 prefix$VAR")
     node = parser.parse()
     cmd = node.pipeline.commands[0]
     words = [p.value for p in cmd.parts if isinstance(p, WordNode)]
-    assert words == ["echo", "$HOME", "$?", "$", "$1", "prefix$VAR"]
+    env_vars = [p.name for p in cmd.parts if isinstance(p, EnvVarNode)]
+    assert env_vars == ["HOME", "VAR"]
+    assert words == ["echo", "$?", "$", "$1", "prefix"]
 
 
 def test_parse_quotes_with_delimiters_par03():
@@ -170,3 +173,30 @@ def test_cor05_parse_error_precise_locations():
         transpile(source_multi)
     assert exc_info.value.line == 3
     assert exc_info.value.column == 10
+
+
+def test_parser_env_var_in_command():
+    parser = CommandParser("kubectl -n $NAMESPACE get pods")
+    node = parser.parse()
+    cmd = node.pipeline.commands[0]
+    env_parts = [p for p in cmd.parts if isinstance(p, EnvVarNode)]
+    assert len(env_parts) == 1
+    assert env_parts[0].name == "NAMESPACE"
+
+
+def test_parser_env_var_has_interpolation():
+    parser = CommandParser("echo $HOME")
+    node = parser.parse()
+    assert node.pipeline.has_interpolation()
+
+
+def test_parser_env_var_mixed_with_interpolation():
+    parser = CommandParser("aws s3 cp {local} s3://$BUCKET/out/")
+    node = parser.parse()
+    cmd = node.pipeline.commands[0]
+    env_parts = [p for p in cmd.parts if isinstance(p, EnvVarNode)]
+    interp_parts = [p for p in cmd.parts if isinstance(p, InterpolationNode)]
+    assert len(env_parts) == 1
+    assert env_parts[0].name == "BUCKET"
+    assert len(interp_parts) == 1
+

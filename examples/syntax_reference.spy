@@ -137,4 +137,22 @@ with env(APP_ENV="testing", DEBUG="true"):
 
 print("ENV ripristinato fuori dallo scope:", sys.modules["os"].getenv("APP_ENV"))
 
+
+# ---------------------------------------------------------------------------
+# 8. VARIABILI D'AMBIENTE FIRST-CLASS: $VARNAME
+# ---------------------------------------------------------------------------
+# 8.1 Lettura di variabili d'ambiente
+print("[8.1] Lettura $PATH:", len($PATH), "caratteri")
+
+# 8.2 Assegnazione e mutazione di variabili d'ambiente
+$DEPLOY_ENV = "staging"
+$API_PORT = "9000"
+assert $DEPLOY_ENV == "staging"
+print("[8.2] Assegnato $DEPLOY_ENV:", $DEPLOY_ENV, "porta:", $API_PORT)
+
+# 8.3 Utilizzo diretto dentro comandi shell $(...)
+$GREETING = "Hello from spy"
+$({py} -c "import os; print('[8.3] Sottoprocesso riceve:', os.environ.get('GREETING'))")
+
 print("\n--- Syntax Reference completata con successo! ---")
+

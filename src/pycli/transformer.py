@@ -11,6 +11,7 @@ from pycli.lexer import Lexer, Token, TokenType
 from pycli.parser import (
     CommandExpressionNode,
     CommandParser,
+    EnvVarNode,
     InterpolationNode,
     RedirectionNode,
     SplatNode,
@@ -52,10 +53,12 @@ class Transformer:
         self.target_platform = target_platform or sys.platform
         self.used_symbols: Set[str] = set()
         self.source_map: dict[int, int] = {}
+        self._needs_os_import: bool = False
 
     def transform(self, source: str, validate: bool = False) -> str:
         self.used_symbols.clear()
         self.source_map.clear()
+        self._needs_os_import = False
 
         lexer = Lexer(source)
         tokens = lexer.tokenize()
@@ -69,6 +72,11 @@ class Transformer:
                 val = token_values.get(i, token.value)
                 output_chunks.append(val)
                 recorded_chunks.append((val, token.line, False))
+            elif token.type == TokenType.ENV_VAR:
+                py_code = f'os.environ["{token.value}"]'
+                self._needs_os_import = True
+                output_chunks.append(py_code)
+                recorded_chunks.append((py_code, token.line, False))
             elif token.type == TokenType.COMMAND_EXPR:
                 # Check if preceded by 'await '
                 prev_text = output_chunks[-1] if output_chunks else ""
@@ -159,6 +167,9 @@ class Transformer:
                 for offset in range(lines_added):
                     shifted_map[insert_idx + 1 + offset] = 1
                 self.source_map = shifted_map
+
+        if self._needs_os_import and self.auto_import:
+            result_code = self._inject_os_import(result_code)
 
         if validate:
             try:
@@ -464,6 +475,9 @@ class Transformer:
                     elif isinstance(part, InterpolationNode):
                         if part.expression:
                             args.append(f"({part.expression})")
+                    elif isinstance(part, EnvVarNode):
+                        self._needs_os_import = True
+                        args.append(f'os.environ["{part.name}"]')
                     elif isinstance(part, WordNode):
                         if "{" in part.value and "}" in part.value:
                             args.append(self._format_fstring(part.value, for_argv=True))
@@ -504,6 +518,9 @@ class Transformer:
                     for p in group:
                         if isinstance(p, InterpolationNode):
                             fstring_pieces.append("{" + p.expression + "}")
+                        elif isinstance(p, EnvVarNode):
+                            self._needs_os_import = True
+                            fstring_pieces.append("{" + f'os.environ["{p.name}"]' + "}")
                         elif isinstance(p, WordNode):
                             if "{" in p.value and "}" in p.value:
                                 fstring_pieces.append(self._escape_non_interpolations(p.value, for_argv=True))
@@ -795,6 +812,51 @@ class Transformer:
         import_stmt = f"from pycli.runtime import {', '.join(sorted_symbols)}\n"
         result = "".join(lines[:insert_idx]) + import_stmt + "".join(lines[insert_idx:])
         return result, 1, insert_idx
+
+    def _inject_os_import(self, code: str) -> str:
+        """Inject 'import os' at the top of the generated Python source if not already present."""
+        import ast as _ast
+        # Check if 'import os' or 'from os import ...' is already present
+        try:
+            tree = _ast.parse(code)
+        except Exception:
+            tree = None
+
+        if tree is not None:
+            for stmt in tree.body:
+                if isinstance(stmt, _ast.Import):
+                    for alias in stmt.names:
+                        if alias.name == "os" and alias.asname is None:
+                            return code  # already imported
+                if isinstance(stmt, _ast.ImportFrom) and stmt.module == "os":
+                    return code  # already imported from os
+
+        lines = code.splitlines(keepends=True)
+        # Insert after shebang, coding comment, future imports, and pycli.runtime import
+        insert_idx = 0
+        if lines and lines[0].startswith("#!"):
+            insert_idx = 1
+        # Skip coding comment
+        if insert_idx < len(lines):
+            stripped = lines[insert_idx].strip()
+            if stripped.startswith("#") and ("coding:" in stripped or "coding=" in stripped):
+                insert_idx += 1
+        # Skip future imports and pycli.runtime import
+        try:
+            if tree is not None:
+                future_and_runtime = [
+                    stmt for stmt in tree.body
+                    if (isinstance(stmt, _ast.ImportFrom) and stmt.module in ("__future__", "pycli.runtime"))
+                ]
+                if future_and_runtime:
+                    last_line = max(stmt.end_lineno for stmt in future_and_runtime)
+                    insert_idx = last_line
+        except Exception:
+            pass
+
+        import_line = "import os\n"
+        result = "".join(lines[:insert_idx]) + import_line + "".join(lines[insert_idx:])
+        return result
 
 
 def transpile(

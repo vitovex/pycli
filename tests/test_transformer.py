@@ -252,3 +252,58 @@ def test_transpile_source_map_exact_lines_dx01():
     transformer.transform(source)
     # Three lines in source, three lines in output
     assert transformer.source_map == {1: 1, 2: 2, 3: 3}
+
+
+def test_transpile_env_var_assignment():
+    source = "home = $HOME\n"
+    py = transpile(source, auto_import=False)
+    assert py == 'home = os.environ["HOME"]\n'
+
+
+def test_transpile_env_var_auto_import_os():
+    source = "x = $MY_VAR\n"
+    py = transpile(source, auto_import=True)
+    assert "import os" in py
+    assert 'os.environ["MY_VAR"]' in py
+
+
+def test_transpile_env_var_no_duplicate_os_import():
+    source = "import os\nx = $MY_VAR\n"
+    py = transpile(source, auto_import=True)
+    assert py.count("import os") == 1
+
+
+def test_transpile_env_var_in_expression():
+    source = "print($AWS_REGION)\n"
+    py = transpile(source, auto_import=False)
+    assert py == 'print(os.environ["AWS_REGION"])\n'
+
+
+def test_transpile_env_var_in_command():
+    source = "$(kubectl -n $NAMESPACE get pods)\n"
+    py = transpile(source, auto_import=False)
+    assert 'os.environ["NAMESPACE"]' in py
+    assert "run_expanded" in py
+
+
+def test_transpile_env_var_and_python_var_in_command():
+    source = "$(aws s3 cp {local_file} s3://$BUCKET/out/)\n"
+    py = transpile(source, auto_import=False)
+    assert "(local_file)" in py
+    assert 'os.environ["BUCKET"]' in py
+
+
+def test_transpile_env_var_multiple():
+    source = 'url = $BASE_URL + "/api/" + $API_VERSION\n'
+    py = transpile(source, auto_import=False)
+    assert 'os.environ["BASE_URL"]' in py
+    assert 'os.environ["API_VERSION"]' in py
+
+
+def test_transpile_env_var_setting_mutation():
+    source = '$NODE_ENV = "production"\n'
+    py = transpile(source, auto_import=True)
+    assert 'import os' in py
+    assert 'os.environ["NODE_ENV"] = "production"' in py
+
+

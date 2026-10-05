@@ -112,3 +112,64 @@ def test_lexer_bitwise_and_not_background():
     assert tokens[1].background is False
     assert tokens[2].type == TokenType.PYTHON_CODE
     assert tokens[2].value.startswith(" & mask")
+
+
+def test_lexer_env_var_simple():
+    source = "home = $HOME\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    assert len(tokens) == 3
+    assert tokens[0].type == TokenType.PYTHON_CODE
+    assert tokens[0].value == "home = "
+    assert tokens[1].type == TokenType.ENV_VAR
+    assert tokens[1].value == "HOME"
+    assert tokens[2].type == TokenType.PYTHON_CODE
+    assert tokens[2].value == "\n"
+
+
+def test_lexer_env_var_underscore_led():
+    source = "x = $_MY_VAR\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    assert tokens[1].type == TokenType.ENV_VAR
+    assert tokens[1].value == "_MY_VAR"
+
+
+def test_lexer_env_var_mixed_after_command():
+    source = "x = $(git rev-parse HEAD)\ny = $CI_COMMIT_SHA\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    env_tokens = [t for t in tokens if t.type == TokenType.ENV_VAR]
+    assert len(env_tokens) == 1
+    assert env_tokens[0].value == "CI_COMMIT_SHA"
+
+
+def test_lexer_env_var_inside_string_is_not_captured():
+    # Inside a Python string, $HOME must NOT be tokenized as ENV_VAR
+    source = 's = "$HOME"\n'
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    assert all(t.type == TokenType.PYTHON_CODE for t in tokens)
+    assert "$HOME" in "".join(t.value for t in tokens)
+
+
+def test_lexer_lowercase_dollar_is_not_env_var():
+    # $home is NOT a valid ENV_VAR — stays as Python code (SyntaxError territory)
+    source = "x = $home\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    assert all(t.type == TokenType.PYTHON_CODE for t in tokens)
+
+
+def test_lexer_dollar_open_paren_is_not_env_var():
+    source = "$(echo hi)\n"
+    lexer = Lexer(source)
+    tokens = lexer.tokenize()
+
+    assert tokens[0].type == TokenType.COMMAND_EXPR
+

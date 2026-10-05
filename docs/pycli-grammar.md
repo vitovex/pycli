@@ -282,7 +282,8 @@ Command expressions support trailing modifiers:
 | Background Execution | `$(sleep 5)&` | DSL | `run_bg("sleep 5")` |
 | Chaining `.tee` | `$(build).tee` | DSL | `run("build", tee=True)` |
 | Chaining `.input` | `$(grep api).input(text)` | DSL | `run("grep api", input=text)` |
-| Shell Variable | `$(echo $HOME)` | Shell | `run("echo $HOME")` (passed to shell) |
+| Environment Variable | `$VAR` / `$(echo $VAR)` | DSL | `os.environ["VAR"]` / `run_expanded(..., os.environ["VAR"])` |
+| Shell Variable (non-env) | `$(echo $1)` / `$(echo $?)` | Shell | Literal word token passed to shell |
 | Inner Subcommand | `$(echo $(uname -r))` | Shell (POSIX) | `run("echo $(uname -r)")` (raises TranspilerError on Windows) |
 | Interpolation | `$(echo {name})` | DSL (Python) | `run(f"echo {shell_quote(name)}")` |
 | Splat Expansion | `$(rm {*files})` | DSL (Python) | `run_expanded("rm", *files)` |

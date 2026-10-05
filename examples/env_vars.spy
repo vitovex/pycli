@@ -1,0 +1,42 @@
+# examples/env_vars.spy
+# Demonstration of first-class environment variable syntax ($VARNAME) in pycli
+
+import sys
+
+py = sys.executable
+
+print("=== pycli Environment Variable Syntax ($VARNAME) Demo ===\n")
+
+# 1. Reading environment variables in Python code
+# Any $VARNAME with an uppercase letter or underscore is transpiled to os.environ["VARNAME"]
+path_len = len($PATH)
+print(f"[1] Successfully accessed $PATH: {path_len} characters long")
+
+# 2. Mutating / setting environment variables
+# Assigning to $VARNAME sets the variable in the process environment (os.environ["VAR"] = "...")
+$APP_ENV = "production"
+$APP_VERSION = "2.0.0"
+$SERVICE_PORT = "8443"
+
+print("[2] Set environment variables:")
+print("    $APP_ENV     =", $APP_ENV)
+print("    $APP_VERSION =", $APP_VERSION)
+print("    $SERVICE_PORT=", $SERVICE_PORT)
+
+# 3. Environment variables inside command expressions $(...)
+# $APP_ENV is passed as a discrete argument to the command
+res = $({py} -c "import os; print('Subprocess read APP_ENV:', os.environ.get('APP_ENV'))")
+print("\n[3] Subprocess execution:")
+print("   ", res.stdout.strip())
+
+# 4. Environment variables combined with strings and paths
+$S3_BUCKET = "my-company-releases"
+$RELEASE_TAG = "v0.2.0"
+tarball = "app-release.tar.gz"
+
+# In composite paths like s3://$S3_BUCKET/$RELEASE_TAG/..., $VARNAME is interpolated into the formatted string
+cmd_preview = $(python -c "import sys; print('Simulated deploy to:', *sys.argv[1:])" s3://$S3_BUCKET/$RELEASE_TAG/{tarball})
+print("\n[4] Composite path interpolation:")
+print("   ", cmd_preview.stdout.strip())
+
+print("\n=== Demo completed successfully! ===")

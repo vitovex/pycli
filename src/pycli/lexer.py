@@ -10,6 +10,7 @@ from typing import List
 class TokenType(Enum):
     PYTHON_CODE = auto()
     COMMAND_EXPR = auto()
+    ENV_VAR = auto()
 
 
 @dataclass
@@ -176,11 +177,43 @@ class Lexer:
                 py_start_col = self.col
                 continue
 
+            # 4b. Check for $VARNAME environment variable (uppercase or underscore after $)
+            if ch == "$" and (self._peek(1).isupper() or self._peek(1) == "_"):
+                flush_py()
+                env_token = self._scan_env_var()
+                tokens.append(env_token)
+                py_start_line = self.line
+                py_start_col = self.col
+                continue
+
             # Regular Python character
             py_buf.append(self._advance())
 
         flush_py()
         return tokens
+
+    def _scan_env_var(self) -> Token:
+        """Scan a $VARNAME environment variable token (uppercase-led identifier after $)."""
+        env_line = self.line
+        env_col = self.col
+        self._advance()  # consume '$'
+        buf: list[str] = []
+        while self.pos < self.length:
+            c = self._peek()
+            if c.isalnum() or c == "_":
+                buf.append(self._advance())
+            else:
+                break
+        if not buf:
+            # Degenerate case: bare '$' with no identifier — treat as Python code
+            # This branch should not be reached given the caller's guard.
+            raise LexerError("Expected identifier after '$'", env_line, env_col)
+        return Token(
+            type=TokenType.ENV_VAR,
+            value="".join(buf),
+            line=env_line,
+            column=env_col,
+        )
 
     def _scan_command_expr(self) -> Token:
         cmd_line = self.line

@@ -217,6 +217,7 @@ The runtime functions `run()`, `run_expanded()`, and `async_run()` support robus
 | **Subcommands** | `$(echo $(git branch --show-current))` | `run("echo $(git branch --show-current)", capture=False)` |
 | **Truthiness** | `if $(git diff --quiet): ...` | `if run("git diff --quiet"): ...` (truthy if `exit_code == 0`) |
 | **Structured Output (JSON)** | `vms = $(az vm list).json` | Navigable `DynamicObj` via `vm.name` or `vm["name"]` |
+| **Environment Variables** | `$VAR`, `$VAR = "..."` | First-class environment variable access and mutation (`os.environ["VAR"]`) |
 | **Interactive REPL** | `spy repl` or `spy` | Interactive shell with on-the-fly transpilation |
 | **CommandResult Properties** | `res = $(git status)` | `res.stdout`, `res.stderr`, `res.exit_code`, `res.lines`, `res.text` |
 | **Modular .spy Imports** | `import devops_utils` | Seamlessly import `.spy` files and packages via Python `importlib` hook |
@@ -389,7 +390,44 @@ $(ruff check {*files})
 
 ---
 
-### 5. Preserved Shell Semantics
+### 5. Environment Variables (`$VARNAME`)
+
+`spy` provides first-class support for reading, mutating, and passing environment variables across Python code and shell commands using `$VARNAME` syntax.
+
+#### Reading Environment Variables
+Any identifier starting with `$` followed by an uppercase letter (`A-Z`) or underscore (`_`) automatically transpiles to `os.environ["VARNAME"]` with automatic `import os` injection:
+```python
+home = $HOME
+region = $AWS_REGION
+print(f"Target cluster: {$CLUSTER_NAME}")
+```
+
+#### Setting Environment Variables
+Mutate or declare environment variables directly using assignment:
+```python
+$NODE_ENV = "production"
+$API_BASE_URL = "https://api.example.com"
+```
+Because this transpiles directly to `os.environ["VAR"] = "..."`, the environment variable is updated in the current process and automatically inherited by all subsequent commands and subprocesses.
+
+#### Inside Shell Command Expressions
+Use `$VARNAME` directly inside `$(...)` commands as standalone arguments or concatenated within composite URLs/paths:
+```python
+# Standalone command argument
+$(kubectl -n $NAMESPACE get pods)
+
+# Concatenated within paths / URLs
+$(aws s3 cp {local_file} s3://$BUCKET/releases/)
+```
+
+#### Syntactic Disambiguation
+- **Environment variables (`$VARNAME`)**: Starts with `$` followed by `[A-Z_]` and zero or more `[A-Za-z0-9_]`.
+- **Command expressions (`$(...)`)**: Starts with `$(` and remains a DSL command expression or inner subcommand.
+- **Literal shell tokens**: Lowercase `$foo`, `$?`, `$1`, or bare `$` are preserved as literal word tokens for the underlying shell.
+
+---
+
+### 6. Preserved Shell Semantics
 
 `spy` passes command strings to the underlying shell without interfering with native shell operators.
 
@@ -439,7 +477,7 @@ $(git tag release-$(cat VERSION))
 
 ---
 
-### 6. The `CommandResult` Object
+### 7. The `CommandResult` Object
 
 Captured command expressions return a `CommandResult` instance with rich inspection capabilities:
 
@@ -467,7 +505,7 @@ else:
 
 ---
 
-### 7. Built-in Context Managers
+### 8. Built-in Context Managers
 
 Every `.spy` script and module automatically has access to `cd()` and `env()` as first-class primitives without requiring any manual `import` statement.
 
@@ -506,7 +544,7 @@ with cd("apps/backend"), env(DATABASE_URL="postgres://test:5432/db", LOG_LEVEL="
 
 ---
 
-### 8. Modular Architecture (`.spy` Imports)
+### 9. Modular Architecture (`.spy` Imports)
 
 You can structure large DevOps and infrastructure projects into modular files. `.spy` scripts can import other `.spy` scripts or packages natively:
 
@@ -523,7 +561,7 @@ The underlying import hook compiles `.spy` files into standard Python bytecode o
 
 ---
 
-### 9. Interactive REPL
+### 10. Interactive REPL
 
 `spy` includes a dedicated interactive read-eval-print loop with instant transpilation:
 
@@ -551,6 +589,7 @@ spy
 The repository includes runnable `.spy` examples in the `examples/` directory:
 
 - [examples/demo.spy](examples/demo.spy): Basic overview demonstrating variable interpolation, list expansion, and status checking.
+- [examples/env_vars.spy](examples/env_vars.spy): First-class environment variable syntax ($VARNAME), setting variables, and subprocess propagation.
 - [examples/syntax_reference.spy](examples/syntax_reference.spy): Comprehensive, executable reference covering every syntax construct and execution mode.
 - [examples/advanced_features.spy](examples/advanced_features.spy): Practical demonstration of the 8 advanced productivity features (streaming, `.tee`, `.input(...)`, `cd()`/`env()`, background jobs `&`, safe mode `?`, quote semantics).
 - [examples/parallel_async_jobs.spy](examples/parallel_async_jobs.spy): Concurrent process orchestration showing how to launch multiple background jobs with `&`, await them all with `wait_all(...)`, and coordinate async coroutines with `asyncio.gather(...)`.
@@ -560,6 +599,7 @@ The repository includes runnable `.spy` examples in the `examples/` directory:
 Run them directly with `spy`:
 ```powershell
 spy examples/demo.spy
+spy examples/env_vars.spy
 spy examples/syntax_reference.spy
 spy examples/advanced_features.spy
 spy examples/parallel_async_jobs.spy
