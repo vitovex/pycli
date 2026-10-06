@@ -41,7 +41,7 @@ Python Source (using pycli runtime: run(), CommandResult)
 12. **Context Managers**: `cd(...)` for temporary working directory and `env(...)` for scoped environment variables.
 13. **Background Jobs & Async**: `job = $(long_task) &` with `job.wait()` and `wait_all(...)`.
 14. **Modular Architecture**: Native import hook (`pycli.importer`) to import `.spy` files directly into other scripts.
-15. **Interactive REPL & Syntax Highlighting**: Terminal highlighter and `spy repl`.
+15. **Interactive REPL with Tab Completion & Shell Light**: Interactive console (`spy repl`), syntax highlighting, Tab completion for Python symbols/attributes and file paths, and Shell Light mode (auto-detection and direct execution of shell commands, in-process `cd`/`pwd`, and command assignment).
 
 ---
 

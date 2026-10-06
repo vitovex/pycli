@@ -218,7 +218,7 @@ The runtime functions `run()`, `run_expanded()`, and `async_run()` support robus
 | **Truthiness** | `if $(git diff --quiet): ...` | `if run("git diff --quiet"): ...` (truthy if `exit_code == 0`) |
 | **Structured Output (JSON)** | `vms = $(az vm list).json` | Navigable `DynamicObj` via `vm.name` or `vm["name"]` |
 | **Environment Variables** | `$VAR`, `$VAR = "..."` | First-class environment variable access and mutation (`os.environ["VAR"]`) |
-| **Interactive REPL** | `spy repl` or `spy` | Interactive shell with on-the-fly transpilation |
+| **Interactive REPL** | `spy repl` or `spy` | Live syntax coloring, tab completion, and Shell Light mode |
 | **CommandResult Properties** | `res = $(git status)` | `res.stdout`, `res.stderr`, `res.exit_code`, `res.lines`, `res.text` |
 | **Modular .spy Imports** | `import devops_utils` | Seamlessly import `.spy` files and packages via Python `importlib` hook |
 
@@ -563,7 +563,7 @@ The underlying import hook compiles `.spy` files into standard Python bytecode o
 
 ### 10. Interactive REPL
 
-`spy` includes a dedicated interactive read-eval-print loop with instant transpilation:
+`spy` includes a feature-packed interactive shell combining Python's power with interactive DevOps workflows:
 
 ```powershell
 # Launch interactive shell
@@ -572,15 +572,48 @@ spy repl
 spy
 ```
 
+#### Live Syntax Highlighting
+Powered by `prompt_toolkit` and Pygments, the REPL colors Python statements and embedded `$(...)` shell expressions in real time as you type.
+
+#### Intelligent Tab Completion
+Press `Tab` anytime for rich autocompletion:
+- **Python Identifiers & Builtins**: Complete variables, functions, and standard library modules.
+- **Attribute Exploration**: Dot-completion for methods and properties (e.g. `res.st` -> `res.stdout`, `res.lines`).
+- **Dynamic JSON / YAML Objects**: Autocomplete keys on `.json` dynamic objects (e.g. `cluster.fq` -> `cluster.fqdn`).
+- **File System Paths**: Intelligent directory and file path completion (e.g. `cd src/` or `cat tests/`).
+
+#### Shell Light Mode (Direct Shell Execution)
+For common DevOps tasks, you don't even need to wrap commands in `$()`:
+- **Direct Execution**: Simply type shell commands like `git status`, `docker ps`, `ls -la`, or `dir`.
+- **In-Process Directory Navigation**: Running `cd <path>` changes the working directory in the Python process itself (`os.chdir`), affecting all subsequent shell and Python operations; `pwd` prints the current directory.
+- **Command Output Assignment**: Assign shell command output directly to Python variables:
+  ```text
+  >>> branch = git branch --show-current
+  >>> branch
+  'main'
+  >>> vms = az vm list
+  ```
+- **Automatic Fallback**: If an input is a Python variable or statement, it executes as pure Python.
+
+#### Example REPL Session
+
 ```text
 >>> branch = $(git branch --show-current).text
 >>> branch
 'main'
->>> for file in $(git ls-files):
-...     if file.endswith(".spy"):
-...         print("Found spy script:", file)
-... 
+>>> git status -s
+ M README.md
+ M pyproject.toml
+>>> cd src/pycli
+>>> pwd
+C:\Git-Sources\personal\vexvex\vlang\src\pycli
+>>> for f in $(git ls-files):
+...     if f.endswith(".py"):
+...         print("Python file:", f)
+...
 ```
+
+*Exit the REPL at any time with `exit()`, `quit`, `Ctrl+D`, or `Ctrl+Z`.*
 
 ---
 

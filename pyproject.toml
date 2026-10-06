@@ -1,6 +1,6 @@
 [project]
 name = "pycli-dsl"
-version = "0.2.0"
+version = "0.3.0"
 description = "A Python-compatible DevOps DSL transpiler extending Python with first-class shell command execution"
 readme = "README.md"
 license = { text = "MIT" }
@@ -8,7 +8,10 @@ authors = [
     { name = "Vito Vessia", email = "vito.vessia@wolterskluwer.com" }
 ]
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "prompt-toolkit>=3.0.40",
+    "pyreadline3>=3.4.1; sys_platform == 'win32'",
+]
 keywords = ["devops", "dsl", "transpiler", "shell", "bash", "cli"]
 classifiers = [
     "Development Status :: 4 - Beta",

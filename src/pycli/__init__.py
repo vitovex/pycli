@@ -36,7 +36,7 @@ from pycli.runtime import (
 )
 from pycli.transformer import Transformer, TranspilerError, transpile
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 MAX_SOURCE_SIZE_BYTES = 10 * 1024 * 1024
 
 

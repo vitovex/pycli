@@ -138,6 +138,11 @@ class DynamicObj:
     def __len__(self) -> int:
         return len(self._data)
 
+    def __dir__(self) -> list[str]:
+        attrs = set(super().__dir__())
+        attrs.update(str(k) for k in self._data.keys() if str(k).isidentifier())
+        return sorted(attrs)
+
     def get(self, key: str, default: Any = None) -> Any:
         return self._data.get(key, default)
 
