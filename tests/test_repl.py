@@ -74,6 +74,7 @@ def test_spy_completer_command_result_attributes():
     assert "res.duration" in matches
     assert "res.exit_code" in matches
     assert "res.json" in matches
+    assert "res.yaml" in matches
     assert "res.lines" in matches
     assert "res.stderr" in matches
     assert "res.stdout" in matches
@@ -133,10 +134,15 @@ def test_is_shell_command_detection():
     # Shell command assignment
     assert _is_shell_command("vms = az vm list", locals_env) == (True, "az vm list", "vms")
     assert _is_shell_command("out = git status", locals_env) == (True, "git status", "out")
+    assert _is_shell_command("res = pwd", locals_env) == (True, "pwd", "res")
+    assert _is_shell_command("files = ls", locals_env) == (True, "ls", "files")
+    assert _is_shell_command("res = ls -la", locals_env) == (True, "ls -la", "res")
 
     # Python expressions & statements (must NOT be intercepted)
     assert _is_shell_command("x = 10", locals_env) == (False, "", None)
     assert _is_shell_command("x", locals_env) == (False, "", None)
+    assert _is_shell_command("x = (1 +", locals_env) == (False, "", None)
+    assert _is_shell_command("x = [", locals_env) == (False, "", None)
     assert _is_shell_command("def my_func():", locals_env) == (False, "", None)
     assert _is_shell_command("for i in range(5):", locals_env) == (False, "", None)
     assert _is_shell_command("import sys", locals_env) == (False, "", None)

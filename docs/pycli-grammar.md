@@ -268,6 +268,7 @@ Command expressions support trailing modifiers:
 - `$(...).tee`: Live streaming while capturing output (`tee=True`).
 - `$(...).input(data)`: Feeds string or bytes to standard input of the process (`input=data`).
 - `$(...).json`: Parses JSON output and wraps dicts into attribute-accessible dynamic objects.
+- `$(...).yaml`: Parses YAML output and wraps dicts into attribute-accessible dynamic objects (requires `pyyaml`).
 - `$(...).lines`: Splitted list of output lines with trailing newlines stripped.
 - `$(...).text`: Stripped stdout string.
 

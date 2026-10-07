@@ -106,3 +106,23 @@ def test_run_capture_false(capfd):
     assert res.stdout == ""
     captured = capfd.readouterr()
     assert "streaming to terminal" in captured.out
+
+
+def test_command_result_yaml(monkeypatch):
+    yaml_text = "service: frontend\nreplicas: 3\nports:\n  - 80\n  - 443\n"
+    res = CommandResult(
+        command="kubectl get svc",
+        stdout=yaml_text,
+        stderr="",
+        exit_code=0,
+        duration=0.1,
+    )
+    # If pyyaml is not installed, it should raise informative ImportError
+    try:
+        import yaml
+        assert res.yaml.service == "frontend"
+        assert res.yaml.replicas == 3
+        assert res.yaml.ports == [80, 443]
+    except ImportError:
+        with pytest.raises(ImportError, match="YAML parsing requires the 'pyyaml' package"):
+            _ = res.yaml

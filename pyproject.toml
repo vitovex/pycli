@@ -1,6 +1,6 @@
 [project]
 name = "pycli-dsl"
-version = "0.3.1"
+version = "0.3.2"
 description = "A Python-compatible DevOps DSL transpiler extending Python with first-class shell command execution"
 readme = "README.md"
 license = { text = "MIT" }
@@ -30,6 +30,7 @@ Homepage = "https://github.com/vitovex/pycli"
 Repository = "https://github.com/vitovex/pycli"
 Issues = "https://github.com/vitovex/pycli/issues"
 Documentation = "https://github.com/vitovex/pycli#readme"
+Changelog = "https://github.com/vitovex/pycli/blob/main/CHANGELOG.md"
 
 [project.scripts]
 pycli = "pycli:main"

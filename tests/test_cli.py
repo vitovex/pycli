@@ -82,3 +82,35 @@ def test_cli_diagnostics_unclosed_and_invalid_dsl_dx02(tmp_path: Path, capsys):
     captured = capsys.readouterr()
     assert "Error:" in captured.err
     assert "Empty pipeline stage" in captured.err
+
+
+def test_cli_transpile_target_platform(tmp_path: Path):
+    nested_spy = tmp_path / "nested.spy"
+    nested_spy.write_text("$(echo $(uname -r))\n", encoding="utf-8")
+
+    # On linux target platform, transpile should succeed
+    py_linux = transpile_file(nested_spy, target_platform="linux")
+    assert 'run("echo $(uname -r)", capture=False)' in py_linux
+
+    # On win32 target platform, it should raise TranspilerError
+    import pytest
+    from pycli import TranspilerError
+    with pytest.raises(TranspilerError, match="not supported on Windows"):
+        transpile_file(nested_spy, target_platform="win32")
+
+
+def test_cli_stdin_transpile_and_run(monkeypatch, capsys):
+    from pycli import main
+    import io
+
+    # Test transpile from stdin
+    monkeypatch.setattr("sys.stdin", io.StringIO("msg = $(echo hello_from_stdin)\n"))
+    py_code = transpile_file("-")
+    assert 'msg = run("echo hello_from_stdin")' in py_code
+
+    # Test run from stdin
+    monkeypatch.setattr("sys.stdin", io.StringIO("print('STDOUT_TEST_OK')\n"))
+    exit_code = run_file("-")
+    assert exit_code == 0
+    captured = capsys.readouterr()
+    assert "STDOUT_TEST_OK" in captured.out

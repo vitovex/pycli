@@ -17,7 +17,7 @@ A lightweight Python-compatible DevOps DSL that extends Python with first-class 
 - **Cross-Platform Compatibility**: Tested and verified across Linux (`ubuntu-latest`), macOS (`macos-latest`), and Windows (`windows-latest`).
 - **Zero Custom VM**: Transpiled directly to standard Python and executed on standard CPython.
 
-See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md).
+See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md) and release history in [CHANGELOG.md](CHANGELOG.md).
 
 ## Example
 
@@ -151,6 +151,12 @@ spy transpile script.spy -o script.py
 spy transpile script.spy --color
 spy transpile script.spy --no-color
 
+# Cross-platform target transpilation (linux, win32, darwin)
+spy transpile script.spy --platform linux
+
+# Transpile directly from standard input (stdin / pipe)
+echo "$(git status)" | spy transpile -
+
 # Validate generated Python code with ast.parse
 spy transpile script.spy --validate
 
@@ -165,6 +171,9 @@ spy transpile script.spy --unsafe-interpolation
 spy run script.spy
 # or simply
 spy script.spy
+
+# Run directly from standard input (stdin / pipe)
+echo "branch = $(git branch --show-current).text; print(branch)" | spy run -
 
 # Run with generated Python syntax validation
 spy run --validate script.spy
@@ -217,6 +226,9 @@ The runtime functions `run()`, `run_expanded()`, and `async_run()` support robus
 | **Subcommands** | `$(echo $(git branch --show-current))` | `run("echo $(git branch --show-current)", capture=False)` |
 | **Truthiness** | `if $(git diff --quiet): ...` | `if run("git diff --quiet"): ...` (truthy if `exit_code == 0`) |
 | **Structured Output (JSON)** | `vms = $(az vm list).json` | Navigable `DynamicObj` via `vm.name` or `vm["name"]` |
+| **Structured Output (YAML)** | `svc = $(kubectl get svc web -o yaml).yaml` | Navigable `DynamicObj` via `svc.metadata.name` or `svc["spec"]` |
+| **Stdin / Pipe Execution** | `echo "$(git status)" \| spy run -` | Direct transpilation and execution from standard input or pipes |
+| **Cross-Platform Target** | `spy transpile --platform linux file.spy` | Explicit platform transpilation (`linux`, `win32`, `darwin`) |
 | **Environment Variables** | `$VAR`, `$VAR = "..."` | First-class environment variable access and mutation (`os.environ["VAR"]`) |
 | **Interactive REPL** | `spy repl` or `spy` | Live syntax coloring, tab completion, and Shell Light mode |
 | **CommandResult Properties** | `res = $(git status)` | `res.stdout`, `res.stderr`, `res.exit_code`, `res.lines`, `res.text` |
@@ -317,6 +329,16 @@ for item in pods.items:
     print(f"Pod: {item.metadata.name} | Status: {item.status.phase}")
     # Supports both dot access and dict access:
     print(f"Namespace: {item['metadata']['namespace']}")
+```
+
+#### `.yaml` — Structured YAML Output
+Automatically parses YAML standard output into a navigable `DynamicObj` (requires `pyyaml`):
+```python
+svc = $(kubectl get svc web -o yaml).yaml
+print(f"Service name: {svc.metadata.name}")
+print(f"Cluster IP: {svc.spec.clusterIP}")
+# Supports both dot access and dict access:
+print(f"Port: {svc['spec']['ports'][0]['port']}")
 ```
 
 #### `.tee` — Live Console Streaming + Output Capture

@@ -213,6 +213,8 @@ class CommandResult:
         self.truncated = truncated
         self._parsed_json: Any = None
         self._json_parsed = False
+        self._parsed_yaml: Any = None
+        self._yaml_parsed = False
 
     def __bool__(self) -> bool:
         """Command results evaluate according to exit code (0 -> True, non-zero -> False)."""
@@ -247,6 +249,25 @@ class CommandResult:
             self._parsed_json = wrap_json(raw)
             self._json_parsed = True
         return self._parsed_json
+
+    @property
+    def yaml(self) -> Any:
+        """Parse stdout as YAML and return dynamic structures (DynamicObj or list)."""
+        if not self._yaml_parsed:
+            content = self.stdout.strip()
+            if not content:
+                raise ValueError(f"Cannot parse YAML from empty stdout for command: {self.command!r}")
+            try:
+                import yaml  # type: ignore
+            except ImportError:
+                raise ImportError(
+                    "YAML parsing requires the 'pyyaml' package. "
+                    "Install it via 'pip install pyyaml' or 'uv add pyyaml'."
+                ) from None
+            raw = yaml.safe_load(content)
+            self._parsed_yaml = wrap_json(raw)
+            self._yaml_parsed = True
+        return self._parsed_yaml
 
     def __str__(self) -> str:
         return self.stdout

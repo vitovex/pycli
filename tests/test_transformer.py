@@ -307,3 +307,30 @@ def test_transpile_env_var_setting_mutation():
     assert 'os.environ["NODE_ENV"] = "production"' in py
 
 
+def test_transpile_env_var_source_map_exact_shift():
+    source = "x = $MY_VAR\ny = 1\nz = 2\n"
+    transformer = Transformer(auto_import=True)
+    code = transformer.transform(source)
+    assert "import os" in code
+    # Line 1 in Python is 'import os' (mapped to spy line 1)
+    # Line 2 in Python is 'x = os.environ["MY_VAR"]' (mapped to spy line 1)
+    # Line 3 in Python is 'y = 1' (mapped to spy line 2)
+    # Line 4 in Python is 'z = 2' (mapped to spy line 3)
+    assert transformer.source_map[2] == 1
+    assert transformer.source_map[3] == 2
+    assert transformer.source_map[4] == 3
+
+
+def test_transpile_docstring_preserved_with_env_var(monkeypatch):
+    monkeypatch.setenv("MY_VAR", "test_value")
+    source = '"""My module docstring."""\nx = $MY_VAR\n'
+    transformer = Transformer(auto_import=True)
+    code = transformer.transform(source)
+    assert code.startswith('"""My module docstring."""\n')
+    assert "import os" in code
+    compiled = compile(code, "<test>", "exec")
+    ns = {}
+    exec(compiled, ns)
+    assert ns.get("__doc__") == "My module docstring."
+
+

@@ -32,6 +32,7 @@ PYCLI_NAMES = {
     "duration",
     "command",
     "json",
+    "yaml",
     "to_dict",
 }
 

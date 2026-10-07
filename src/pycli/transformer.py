@@ -169,7 +169,17 @@ class Transformer:
                 self.source_map = shifted_map
 
         if self._needs_os_import and self.auto_import:
-            result_code = self._inject_os_import(result_code)
+            result_code, lines_added, insert_idx = self._inject_os_import(result_code)
+            if lines_added > 0:
+                shifted_map: dict[int, int] = {}
+                for py_ln, spy_ln in self.source_map.items():
+                    if py_ln <= insert_idx:
+                        shifted_map[py_ln] = spy_ln
+                    else:
+                        shifted_map[py_ln + lines_added] = spy_ln
+                for offset in range(lines_added):
+                    shifted_map[insert_idx + 1 + offset] = 1
+                self.source_map = shifted_map
 
         if validate:
             try:
@@ -813,8 +823,11 @@ class Transformer:
         result = "".join(lines[:insert_idx]) + import_stmt + "".join(lines[insert_idx:])
         return result, 1, insert_idx
 
-    def _inject_os_import(self, code: str) -> str:
-        """Inject 'import os' at the top of the generated Python source if not already present."""
+    def _inject_os_import(self, code: str) -> tuple[str, int, int]:
+        """Inject 'import os' at the proper position if not already present.
+
+        Returns (updated_code, lines_added, insert_line_index).
+        """
         import ast as _ast
         # Check if 'import os' or 'from os import ...' is already present
         try:
@@ -827,12 +840,12 @@ class Transformer:
                 if isinstance(stmt, _ast.Import):
                     for alias in stmt.names:
                         if alias.name == "os" and alias.asname is None:
-                            return code  # already imported
+                            return code, 0, 0  # already imported
                 if isinstance(stmt, _ast.ImportFrom) and stmt.module == "os":
-                    return code  # already imported from os
+                    return code, 0, 0  # already imported from os
 
         lines = code.splitlines(keepends=True)
-        # Insert after shebang, coding comment, future imports, and pycli.runtime import
+        # Insert after shebang, coding comment, future imports, pycli.runtime import, and docstrings
         insert_idx = 0
         if lines and lines[0].startswith("#!"):
             insert_idx = 1
@@ -841,7 +854,7 @@ class Transformer:
             stripped = lines[insert_idx].strip()
             if stripped.startswith("#") and ("coding:" in stripped or "coding=" in stripped):
                 insert_idx += 1
-        # Skip future imports and pycli.runtime import
+        # Skip future imports, pycli.runtime import, and module docstrings
         try:
             if tree is not None:
                 future_and_runtime = [
@@ -850,13 +863,20 @@ class Transformer:
                 ]
                 if future_and_runtime:
                     last_line = max(stmt.end_lineno for stmt in future_and_runtime)
-                    insert_idx = last_line
+                    insert_idx = max(insert_idx, last_line)
+                elif (
+                    tree.body
+                    and isinstance(tree.body[0], _ast.Expr)
+                    and isinstance(tree.body[0].value, _ast.Constant)
+                    and isinstance(tree.body[0].value.value, str)
+                ):
+                    insert_idx = max(insert_idx, tree.body[0].end_lineno)
         except Exception:
             pass
 
         import_line = "import os\n"
         result = "".join(lines[:insert_idx]) + import_line + "".join(lines[insert_idx:])
-        return result
+        return result, 1, insert_idx
 
 
 def transpile(

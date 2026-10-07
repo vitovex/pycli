@@ -36,7 +36,7 @@ from pycli.runtime import (
 )
 from pycli.transformer import Transformer, TranspilerError, transpile
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 MAX_SOURCE_SIZE_BYTES = 10 * 1024 * 1024
 
 
@@ -76,46 +76,69 @@ __all__ = [
 
 
 def transpile_file(
-    input_path: Path,
-    output_path: Path | None = None,
+    input_path: Path | str,
+    output_path: Path | str | None = None,
     validate: bool = False,
     unsafe_interpolation: bool = False,
+    target_platform: str | None = None,
 ) -> str:
-    """Transpile a .spy file to Python code, optionally writing to output_path."""
-    resolved = input_path.resolve()
-    if not resolved.is_file():
-        raise FileNotFoundError(f"File not found: {input_path}")
+    """Transpile a .spy file (or '-' for stdin) to Python code, optionally writing to output_path."""
+    if str(input_path) == "-":
+        source = sys.stdin.read()
+        max_size = get_max_source_size()
+        if len(source.encode("utf-8")) > max_size:
+            raise ValueError(f"Stdin source exceeds maximum allowed size ({max_size} bytes)")
+    else:
+        input_p = Path(input_path) if isinstance(input_path, str) else input_path
+        resolved = input_p.resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(f"File not found: {input_path}")
 
-    size = resolved.stat().st_size
-    max_size = get_max_source_size()
-    if size > max_size:
-        raise ValueError(
-            f"File {input_path} exceeds maximum allowed size "
-            f"({size} bytes > {max_size} bytes)"
-        )
+        size = resolved.stat().st_size
+        max_size = get_max_source_size()
+        if size > max_size:
+            raise ValueError(
+                f"File {input_path} exceeds maximum allowed size "
+                f"({size} bytes > {max_size} bytes)"
+            )
 
-    source = resolved.read_text(encoding="utf-8")
-    transformer = Transformer(auto_import=True, unsafe_interpolation=unsafe_interpolation)
+        source = resolved.read_text(encoding="utf-8")
+
+    transformer = Transformer(
+        auto_import=True,
+        unsafe_interpolation=unsafe_interpolation,
+        target_platform=target_platform,
+    )
     py_code = transformer.transform(source, validate=validate)
     if output_path:
-        output_path.write_text(py_code, encoding="utf-8")
+        out_p = Path(output_path) if isinstance(output_path, str) else output_path
+        out_p.write_text(py_code, encoding="utf-8")
     return py_code
 
 
-def _make_spy_excepthook(script_path: Path, source_map: dict[int, int], original_hook):
-    resolved_path_str = str(script_path.resolve())
-    orig_path_str = str(script_path)
+def _make_spy_excepthook(script_path: Path | str, source_map: dict[int, int], original_hook):
+    is_stdin = str(script_path) == "-"
+    if is_stdin:
+        resolved_path_str = "<stdin>"
+        orig_path_str = "<stdin>"
+    else:
+        p = Path(script_path) if isinstance(script_path, str) else script_path
+        resolved_path_str = str(p.resolve())
+        orig_path_str = str(p)
 
     def _spy_excepthook(exc_type, exc_value, exc_tb):
         try:
             te = traceback.TracebackException(exc_type, exc_value, exc_tb)
-            spy_text = script_path.read_text(encoding="utf-8").splitlines()
+            spy_text = (
+                [] if is_stdin else Path(script_path).read_text(encoding="utf-8").splitlines()
+            )
             for frame in te.stack:
-                if frame.filename in (resolved_path_str, orig_path_str, "<string>"):
+                if frame.filename in (resolved_path_str, orig_path_str, "<string>", "<stdin>"):
                     frame.filename = orig_path_str
                     if frame.lineno in source_map:
                         spy_line = source_map[frame.lineno]
                         frame.lineno = spy_line
+                        frame.end_lineno = spy_line
                         if 1 <= spy_line <= len(spy_text):
                             frame._line = spy_text[spy_line - 1]
             for line in te.format():
@@ -127,26 +150,43 @@ def _make_spy_excepthook(script_path: Path, source_map: dict[int, int], original
 
 
 def run_file(
-    script_path: Path,
+    script_path: Path | str,
     script_args: list[str] | None = None,
     validate: bool = False,
     unsafe_interpolation: bool = False,
     warn_external: bool = False,
+    target_platform: str | None = None,
 ) -> int:
-    """Transpile and execute a .spy file using CPython with .spy import hook enabled."""
-    resolved_path = script_path.resolve()
-    if not resolved_path.is_file():
-        sys.stderr.write(f"Error: script not found: {script_path}\n")
-        return 1
+    """Transpile and execute a .spy file (or '-' for stdin) using CPython with .spy import hook enabled."""
+    is_stdin = str(script_path) == "-"
+    if is_stdin:
+        source = sys.stdin.read()
+        resolved_path = Path.cwd() / "<stdin>"
+        script_dir = str(Path.cwd())
+        script_display_name = "<stdin>"
+        max_size = get_max_source_size()
+        if len(source.encode("utf-8")) > max_size:
+            sys.stderr.write(f"Error: stdin source exceeds maximum allowed size ({max_size} bytes)\n")
+            return 1
+    else:
+        script_p = Path(script_path) if isinstance(script_path, str) else script_path
+        resolved_path = script_p.resolve()
+        script_dir = str(resolved_path.parent)
+        script_display_name = str(script_path)
+        if not resolved_path.is_file():
+            sys.stderr.write(f"Error: script not found: {script_path}\n")
+            return 1
 
-    size = resolved_path.stat().st_size
-    max_size = get_max_source_size()
-    if size > max_size:
-        sys.stderr.write(
-            f"Error: File {script_path} exceeds maximum allowed size "
-            f"({size} bytes > {max_size} bytes)\n"
-        )
-        return 1
+        size = resolved_path.stat().st_size
+        max_size = get_max_source_size()
+        if size > max_size:
+            sys.stderr.write(
+                f"Error: File {script_path} exceeds maximum allowed size "
+                f"({size} bytes > {max_size} bytes)\n"
+            )
+            return 1
+
+        source = resolved_path.read_text(encoding="utf-8")
 
     if warn_external:
         sys.stderr.write(
@@ -156,13 +196,15 @@ def run_file(
     install_import_hook(unsafe_interpolation=unsafe_interpolation, validate=validate)
 
     # Ensure the script's directory is at the beginning of sys.path
-    script_dir = str(resolved_path.parent)
     original_sys_path = list(sys.path)
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
 
-    source = resolved_path.read_text(encoding="utf-8")
-    transformer = Transformer(auto_import=True, unsafe_interpolation=unsafe_interpolation)
+    transformer = Transformer(
+        auto_import=True,
+        unsafe_interpolation=unsafe_interpolation,
+        target_platform=target_platform,
+    )
     try:
         py_code = transformer.transform(source, validate=validate)
     except (TranspilerError, LexerError, ParseError, ValueError) as e:
@@ -170,7 +212,7 @@ def run_file(
         return 1
 
     original_argv = sys.argv
-    sys.argv = [str(script_path)] + (script_args or [])
+    sys.argv = [script_display_name] + (script_args or [])
 
     global_namespace: dict = {
         "__name__": "__main__",
@@ -192,10 +234,10 @@ def run_file(
     }
 
     orig_excepthook = sys.excepthook
-    sys.excepthook = _make_spy_excepthook(resolved_path, transformer.source_map, orig_excepthook)
+    sys.excepthook = _make_spy_excepthook(script_path, transformer.source_map, orig_excepthook)
 
     try:
-        compiled = compile(py_code, str(script_path), "exec")
+        compiled = compile(py_code, script_display_name, "exec")
         exec(compiled, global_namespace)
         return 0
     except SystemExit as e:
@@ -214,11 +256,15 @@ def main(argv: list[str] | None = None) -> None:
     if argv is None:
         argv = sys.argv[1:]
 
-    # If no arguments provided in an interactive terminal, launch REPL
+    # If no arguments provided:
+    # - In an interactive terminal: launch REPL
+    # - In a piped/redirected context: run from stdin
     if not argv:
         if hasattr(sys.stdin, "isatty") and sys.stdin.isatty():
             start_repl()
             return
+        else:
+            argv = ["run", "-"]
 
     parser = argparse.ArgumentParser(
         prog="pycli",
@@ -235,9 +281,9 @@ def main(argv: list[str] | None = None) -> None:
     # pycli repl
     subparsers.add_parser("repl", help="Start the interactive pycli shell")
 
-    # pycli transpile <file.spy> [-o <file.py>] [--validate] [--unsafe-interpolation] [--color / --no-color]
+    # pycli transpile <file.spy> [-o <file.py>] [--validate] [--unsafe-interpolation] [--color / --no-color] [--platform linux|win32|darwin]
     transpile_parser = subparsers.add_parser("transpile", help="Transpile .spy to standard .py")
-    transpile_parser.add_argument("file", help="Path to .spy source file")
+    transpile_parser.add_argument("file", help="Path to .spy source file or '-' for stdin")
     transpile_parser.add_argument("-o", "--output", help="Output .py file path (defaults to stdout)")
     transpile_parser.add_argument(
         "--validate",
@@ -250,6 +296,14 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         default=False,
         help="Disable automatic shell_quote() sanitization on interpolations",
+    )
+    transpile_parser.add_argument(
+        "--platform",
+        "--target-platform",
+        dest="target_platform",
+        choices=["linux", "win32", "darwin"],
+        default=None,
+        help="Target platform OS for syntax validation (e.g. linux, win32, darwin)",
     )
     transpile_parser.add_argument(
         "--color",
@@ -265,8 +319,8 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     # pycli run <file.spy> [--validate] [--unsafe-interpolation] [--warn-external] [args...]
-    run_parser = subparsers.add_parser("run", help="Transpile and execute a .spy file")
-    run_parser.add_argument("file", help="Path to .spy file to run")
+    run_parser = subparsers.add_parser("run", help="Transpile and execute a .spy file or '-' for stdin")
+    run_parser.add_argument("file", help="Path to .spy file to run or '-' for stdin")
     run_parser.add_argument(
         "--validate",
         action="store_true",
@@ -287,9 +341,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to script")
 
-    # If the first argument is a file ending in .spy or an existing file (not a known command/flag), default to run
+    # If the first argument is a file ending in .spy, '-' or an existing file, default to run
     if argv and not argv[0].startswith("-") and argv[0] not in ("transpile", "run", "repl", "help"):
         argv = ["run"] + argv
+    elif argv and argv[0] == "-":
+        argv = ["run", "-"]
 
     args = parser.parse_args(argv)
 
@@ -297,19 +353,20 @@ def main(argv: list[str] | None = None) -> None:
         start_repl()
 
     elif args.subcommand == "transpile":
-        input_file = Path(args.file)
-        if not input_file.exists():
-            sys.stderr.write(f"Error: file not found: {input_file}\n")
+        is_stdin = args.file == "-"
+        if not is_stdin and not Path(args.file).exists():
+            sys.stderr.write(f"Error: file not found: {args.file}\n")
             sys.exit(1)
         out_path = Path(args.output) if args.output else None
         try:
             py_code = transpile_file(
-                input_file,
+                args.file,
                 out_path,
                 validate=args.validate,
                 unsafe_interpolation=args.unsafe_interpolation,
+                target_platform=args.target_platform,
             )
-        except (ValueError, TranspilerError, LexerError, ParseError) as e:
+        except (ValueError, TranspilerError, LexerError, ParseError, FileNotFoundError) as e:
             sys.stderr.write(f"Error: {e}\n")
             sys.exit(1)
         if not out_path:
@@ -319,12 +376,12 @@ def main(argv: list[str] | None = None) -> None:
                 sys.stdout.write(py_code)
 
     elif args.subcommand == "run":
-        input_file = Path(args.file)
-        if not input_file.exists():
-            sys.stderr.write(f"Error: file not found: {input_file}\n")
+        is_stdin = args.file == "-"
+        if not is_stdin and not Path(args.file).exists():
+            sys.stderr.write(f"Error: file not found: {args.file}\n")
             sys.exit(1)
         exit_code = run_file(
-            input_file,
+            args.file,
             args.args,
             validate=args.validate,
             unsafe_interpolation=args.unsafe_interpolation,

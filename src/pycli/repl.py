@@ -214,19 +214,48 @@ def _is_shell_command(source: str, locals_dict: dict[str, Any]) -> tuple[bool, s
         # Check if entire assignment compiles as valid Python
         try:
             res = codeop.compile_command(stripped)
-            if res is not None:
+            if res is None:
+                # Incomplete Python statement (multiline assignment continuation)
                 return False, "", None
         except SyntaxError:
-            pass
+            res = None
 
-        # RHS could be a shell command
         rhs_tokens = rhs.split()
         if rhs_tokens:
             first_rhs = rhs_tokens[0]
-            if (
+
+            # Python keywords are never shell commands
+            if keyword.iskeyword(first_rhs):
+                return False, "", None
+
+            is_candidate = (
                 first_rhs in SHELL_BUILTINS
                 or shutil.which(first_rhs) is not None
                 or first_rhs.startswith(("./", "../", "/", "~/", ".\\", "..\\"))
+            )
+
+            # If the assignment was syntactically valid in Python (e.g. `res = pwd` or `res = ls -la`)
+            if res is not None:
+                # If first_rhs is a known variable in locals, treat as Python assignment unless followed by a shell flag
+                if first_rhs in locals_dict:
+                    if len(rhs_tokens) >= 2 and rhs_tokens[1].startswith("-"):
+                        return True, rhs, target_var
+                    return False, "", None
+
+                # If first_rhs is in builtins (e.g. `res = len`), keep as Python unless it's a shell builtin like `pwd`, `dir`
+                if first_rhs in dir(builtins) and first_rhs not in ("pwd", "dir", "cd", "cls", "clear", "echo", "type"):
+                    return False, "", None
+
+                # If it's a known shell command/executable, intercept as shell assignment
+                if is_candidate:
+                    return True, rhs, target_var
+
+                return False, "", None
+
+            # If res is None (from SyntaxError), check if RHS looks like a shell command
+            if (
+                is_candidate
+                or any(op in rhs for op in ("|", ">", "<"))
                 or len(rhs_tokens) >= 2
             ):
                 return True, rhs, target_var
