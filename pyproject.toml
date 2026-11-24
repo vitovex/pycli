@@ -1,6 +1,6 @@
 [project]
 name = "pycli-dsl"
-version = "0.3.2"
+version = "0.4.0"
 description = "A Python-compatible DevOps DSL transpiler extending Python with first-class shell command execution"
 readme = "README.md"
 license = { text = "MIT" }
@@ -37,7 +37,7 @@ pycli = "pycli:main"
 spy = "pycli:main"
 
 [build-system]
-requires = ["uv_build>=0.10.0,<0.11.0"]
+requires = ["uv_build>=0.10.0,<0.14.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v0.4.0] - 2026-11-24
+
+### Added
+- **Tabular Output Parsing (`.table`)**: Added `.table` property on `CommandResult` to parse structured fixed-width or whitespace-delimited CLI tables (such as `docker ps`, `kubectl get`, `ps aux`) into a list of `DynamicObj` rows with dot attribute and dictionary access.
+- **Real-Time Streaming (`.stream`)**: Added `.stream` property on `$(...)` command expressions yielding lines in real time as the underlying process outputs them, avoiding buffer stalls.
+- **Polling & Retry Helpers (`.retry()` and `.until()`)**:
+  - `CommandResult.retry(attempts=3, delay=1.0, backoff=1.0, check=False)` to retry failing commands with configurable exponential backoff.
+  - `CommandResult.until(predicate, timeout=60.0, delay=1.0)` for declarative polling until a condition is satisfied.
+- **Dry-Run Mode**:
+  - `spy run --dry-run` CLI flag to inspect and log commands without executing them.
+  - `with dry_run():` context manager in `pycli.runtime` for dry-run blocks.
+
+### Fixed
+- **REPL Shell Light Misdetection on Environment Variables**: Resolved issue in interactive REPL where assignments with environment variables (e.g. `path = $PATH`) or syntax errors were incorrectly detected as standalone shell commands.
+- **REPL History File Permission Handling**: Guarded history file writes in REPL against `PermissionError` when run in restricted user directories.
+
+---
+
 ## [v0.3.2] - 2026-10-07
 
 ### Added
