@@ -79,6 +79,10 @@ def test_spy_completer_command_result_attributes():
     assert "res.stderr" in matches
     assert "res.stdout" in matches
     assert "res.text" in matches
+    assert "res.table" in matches
+    assert "res.stream" in matches
+    assert "res.retry(" in matches
+    assert "res.until(" in matches
 
 
 def test_spy_completer_dynamic_obj_properties():
@@ -149,6 +153,9 @@ def test_is_shell_command_detection():
     assert _is_shell_command("print('hi')", locals_env) == (False, "", None)
     assert _is_shell_command("$(git status)", locals_env) == (False, "", None)
     assert _is_shell_command("$MYVAR", locals_env) == (False, "", None)
+    assert _is_shell_command("path = $PATH", locals_env) == (False, "", None)
+    assert _is_shell_command("my_var = $MYVAR", locals_env) == (False, "", None)
+    assert _is_shell_command("x = $VAR + 'suffix'", locals_env) == (False, "", None)
 
 
 # =========================================================================
@@ -207,6 +214,22 @@ def test_spy_console_explicit_dsl_expression():
     assert success is False
     assert "dsl_res" in console.locals
     assert console.locals["dsl_res"].stdout.strip() == "from_explicit_dsl"
+
+
+def test_spy_console_env_var_assignment():
+    console = SpyConsole()
+    os.environ["PYCLI_TEST_VAR"] = "test_val_123"
+    try:
+        success = console.runsource("my_path = $PATH")
+        assert success is False
+        assert "my_path" in console.locals
+        assert console.locals["my_path"] == os.environ["PATH"]
+
+        success2 = console.runsource("test_var = $PYCLI_TEST_VAR")
+        assert success2 is False
+        assert console.locals["test_var"] == "test_val_123"
+    finally:
+        os.environ.pop("PYCLI_TEST_VAR", None)
 
 
 def test_spy_console_syntax_errors_preserved(capsys):

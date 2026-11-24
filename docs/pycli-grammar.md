@@ -269,6 +269,10 @@ Command expressions support trailing modifiers:
 - `$(...).input(data)`: Feeds string or bytes to standard input of the process (`input=data`).
 - `$(...).json`: Parses JSON output and wraps dicts into attribute-accessible dynamic objects.
 - `$(...).yaml`: Parses YAML output and wraps dicts into attribute-accessible dynamic objects (requires `pyyaml`).
+- `$(...).table`: Parses tabular/columnar output (e.g. `docker ps`, `kubectl get`, `ps aux`, `df -h`) into a list of `DynamicObj` records with attribute-based access.
+- `$(...).stream`: Live real-time streaming generator of stdout lines as they are produced.
+- `$(...).retry(attempts=3, delay=1.0, backoff=2.0)`: Automatically retries a failing command up to `attempts` times with backoff.
+- `$(...).until(predicate, timeout=60.0, delay=1.0)`: Polls command execution until a predicate function evaluates to `True`.
 - `$(...).lines`: Splitted list of output lines with trailing newlines stripped.
 - `$(...).text`: Stripped stdout string.
 
@@ -282,7 +286,11 @@ Command expressions support trailing modifiers:
 | Safe Mode | `$(git status)?` | DSL | `run("git status", suppress_errors=True)` |
 | Background Execution | `$(sleep 5)&` | DSL | `run_bg("sleep 5")` |
 | Chaining `.tee` | `$(build).tee` | DSL | `run("build", tee=True)` |
+| Chaining `.stream` | `for l in $(logs).stream:` | DSL | `for l in run("logs", stream=True):` |
 | Chaining `.input` | `$(grep api).input(text)` | DSL | `run("grep api", input=text)` |
+| Structured Table | `vms = $(az vm list).table` | Runtime | `vms = run("az vm list").table` |
+| Retry Helper | `$(curl url)?.retry(attempts=3)` | Runtime | `run("curl url", suppress_errors=True).retry(attempts=3)` |
+| Dry Run Context | `with dry_run(): $(rm -rf /tmp)` | Runtime | `with dry_run(): run("rm -rf /tmp")` |
 | Environment Variable | `$VAR` / `$(echo $VAR)` | DSL | `os.environ["VAR"]` / `run_expanded(..., os.environ["VAR"])` |
 | Shell Variable (non-env) | `$(echo $1)` / `$(echo $?)` | Shell | Literal word token passed to shell |
 | Inner Subcommand | `$(echo $(uname -r))` | Shell (POSIX) | `run("echo $(uname -r)")` (raises TranspilerError on Windows) |

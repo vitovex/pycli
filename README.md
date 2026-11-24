@@ -27,24 +27,22 @@ See the full specification in [docs/pycli-grammar.md](docs/pycli-grammar.md) and
 target_env = "production"
 branch = $(git branch --show-current).text
 
-# 1. Pipelines (|) and line streaming
-live_pods = $(kubectl get pods -n {target_env} | grep -E 'Running|Pending').lines
-for pod in live_pods:
-    print(f"Active pod: {pod}")
+# 1. Pipelines (|) and columnar table parsing (.table)
+pods = $(kubectl get pods -n {target_env}).table
+for pod in pods:
+    print(f"Pod: {pod.name}, Status: {pod.status}, Ready: {pod.ready}")
 
-# 2. Context managers: temporary directory (cd) and environment variables (env)
-with cd("frontend"), env(NODE_ENV=target_env):
+# 2. Context managers: temporary directory (cd), environment variables (env), and dry-run
+with cd("frontend"), env(NODE_ENV=target_env), dry_run(False):
     $(npm ci)!
     build_log = $(npm run build).tee
 
-# 3. List expansion (splat), structured JSON output, and safe probing (?)
-artifacts = ["dist/app.js", "dist/app.css"]
-$(gzip -k {*artifacts})
+# 3. Real-time streaming (.stream) and retrying (.retry)
+for log_line in $(npm test).stream:
+    if "FAIL" in log_line:
+        print(f"Test failure detected: {log_line}")
 
-cluster = $(az aks show --name prod-cluster --resource-group {target_env}).json
-print(f"Cluster FQDN: {cluster.fqdn}")
-
-status = $(curl -sSf http://localhost:8080/health)?
+status = $(curl -sSf http://localhost:8080/health)? .retry(attempts=3, delay=1.0)
 if status:
     print("Health check passed successfully!")
 ```

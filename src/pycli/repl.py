@@ -20,11 +20,14 @@ from pycli.parser import ParseError
 from pycli.runtime import (
     CommandError,
     CommandResult,
+    CommandStream,
     CommandTimeoutError,
     DynamicObj,
     ShellOp,
     cd,
+    dry_run,
     env,
+    parse_table,
     run,
     run_bg,
     run_expanded,
@@ -228,6 +231,10 @@ def _is_shell_command(source: str, locals_dict: dict[str, Any]) -> tuple[bool, s
             if keyword.iskeyword(first_rhs):
                 return False, "", None
 
+            # Environment variables ($VAR) or command expressions ($(cmd)) are pycli DSL, not shell command names
+            if first_rhs.startswith("$"):
+                return False, "", None
+
             is_candidate = (
                 first_rhs in SHELL_BUILTINS
                 or shutil.which(first_rhs) is not None
@@ -256,9 +263,11 @@ def _is_shell_command(source: str, locals_dict: dict[str, Any]) -> tuple[bool, s
             if (
                 is_candidate
                 or any(op in rhs for op in ("|", ">", "<"))
-                or len(rhs_tokens) >= 2
+                or (first_rhs.isidentifier() and len(rhs_tokens) >= 2)
             ):
                 return True, rhs, target_var
+
+        return False, "", None
 
     # Standalone line
     tokens = stripped.split()
@@ -271,6 +280,10 @@ def _is_shell_command(source: str, locals_dict: dict[str, Any]) -> tuple[bool, s
     if keyword.iskeyword(first_token):
         return False, "", None
 
+    # DSL environment variable ($VAR) or command expression is handled by DSL transpiler, not as a standalone shell command
+    if first_token.startswith("$"):
+        return False, "", None
+
     # Check compilation with Python
     try:
         compiled = codeop.compile_command(stripped)
@@ -281,7 +294,7 @@ def _is_shell_command(source: str, locals_dict: dict[str, Any]) -> tuple[bool, s
             or shutil.which(first_token) is not None
             or first_token.startswith(("./", "../", "/", "~/", ".\\", "..\\"))
             or any(op in stripped for op in ("|", ">", "<"))
-            or (first_token.isidentifier() and len(tokens) >= 2 and not stripped.endswith(":"))
+            or (first_token.isidentifier() and len(tokens) >= 2 and not stripped.endswith(":") and "=" not in tokens)
         ):
             return True, stripped, None
         return False, "", None
@@ -336,11 +349,14 @@ class SpyConsole(code.InteractiveConsole):
         locals.setdefault("wait_all", wait_all)
         locals.setdefault("cd", cd)
         locals.setdefault("env", env)
+        locals.setdefault("dry_run", dry_run)
         locals.setdefault("shell_quote", shell_quote)
         locals.setdefault("CommandResult", CommandResult)
+        locals.setdefault("CommandStream", CommandStream)
         locals.setdefault("CommandError", CommandError)
         locals.setdefault("CommandTimeoutError", CommandTimeoutError)
         locals.setdefault("DynamicObj", DynamicObj)
+        locals.setdefault("parse_table", parse_table)
 
         locals.setdefault("highlight_python", highlight_python)
 
@@ -361,7 +377,14 @@ class SpyConsole(code.InteractiveConsole):
                 if os.path.exists(histfile):
                     readline.read_history_file(histfile)
                 import atexit
-                atexit.register(readline.write_history_file, histfile)
+
+                def _safe_write_history() -> None:
+                    try:
+                        readline.write_history_file(histfile)
+                    except Exception:
+                        pass
+
+                atexit.register(_safe_write_history)
             except Exception:
                 pass
 
@@ -427,8 +450,8 @@ class SpyConsole(code.InteractiveConsole):
 
 if PROMPT_TOOLKIT_AVAILABLE:
     PYCLI_RUNTIME_WORDS = (
-        "run", "run_expanded", "run_bg", "wait_all", "cd", "env", "shell_quote",
-        "CommandResult", "CommandError", "CommandTimeoutError", "DynamicObj",
+        "run", "run_expanded", "run_bg", "wait_all", "cd", "env", "dry_run", "shell_quote",
+        "CommandResult", "CommandStream", "CommandError", "CommandTimeoutError", "DynamicObj", "parse_table",
     )
 
     SHELL_WORDS = (

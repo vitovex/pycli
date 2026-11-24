@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -15,11 +16,24 @@ import time
 from contextlib import contextmanager
 import contextvars
 from pathlib import Path
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Callable, Iterator, Mapping, Sequence
 
 _current_expression: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "_current_expression", default=None
 )
+_dry_run_active: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_dry_run_active", default=False
+)
+
+
+@contextmanager
+def dry_run(active: bool = True) -> Iterator[None]:
+    """Context manager to scope dry-run simulation of shell commands."""
+    token = _dry_run_active.set(active)
+    try:
+        yield
+    finally:
+        _dry_run_active.reset(token)
 
 
 @contextmanager
@@ -190,6 +204,133 @@ def wrap_json(data: Any) -> Any:
     return data
 
 
+def _normalize_header(name: str) -> str:
+    cleaned = re.sub(r"[^\w\s]", "", name).strip().lower()
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    if not cleaned:
+        cleaned = "col"
+    elif not cleaned[0].isalpha() and cleaned[0] != "_":
+        cleaned = f"col_{cleaned}"
+    return cleaned
+
+
+def parse_table(text: str) -> list[DynamicObj]:
+    """Parse tabular / columnar stdout into a list of DynamicObj records.
+
+    Supports fixed-width column alignment (e.g. kubectl, docker ps, ps, df)
+    as well as tab-delimited and whitespace-delimited tables.
+    """
+    lines = [line.rstrip("\r\n") for line in text.splitlines() if line.strip()]
+    if not lines:
+        return []
+
+    header_line = lines[0]
+    data_lines = lines[1:]
+
+    # Case 1: Tab-separated table
+    if "\t" in header_line:
+        headers = [h.strip() for h in header_line.split("\t") if h.strip()]
+        records: list[DynamicObj] = []
+        for line in data_lines:
+            cols = [c.strip() for c in line.split("\t")]
+            row_dict: dict[str, Any] = {}
+            for idx, h in enumerate(headers):
+                val = cols[idx] if idx < len(cols) else ""
+                row_dict[h] = val
+                norm = _normalize_header(h)
+                if norm not in row_dict:
+                    row_dict[norm] = val
+            records.append(DynamicObj(row_dict))
+        return records
+
+    # Case 2: Multi-space column headers (e.g. docker ps, kubectl get, ps aux, df)
+    header_matches = list(re.finditer(r"\S+(?: \S+)*", header_line))
+    if len(header_matches) >= 2:
+        col_spans: list[tuple[int, int | None, str]] = []
+        for i, m in enumerate(header_matches):
+            start = m.start()
+            end = header_matches[i + 1].start() if i + 1 < len(header_matches) else None
+            name = m.group().strip()
+            col_spans.append((start, end, name))
+
+        records: list[DynamicObj] = []
+        for line in data_lines:
+            row_dict: dict[str, Any] = {}
+            for start, end, name in col_spans:
+                val = line[start:end].strip() if end is not None else line[start:].strip()
+                row_dict[name] = val
+                norm = _normalize_header(name)
+                if norm not in row_dict:
+                    row_dict[norm] = val
+            records.append(DynamicObj(row_dict))
+        return records
+
+    # Case 3: Simple whitespace-separated headers
+    parts = header_line.split()
+    records: list[DynamicObj] = []
+    for line in data_lines:
+        row_parts = line.split()
+        row_dict: dict[str, Any] = {}
+        for idx, h in enumerate(parts):
+            val = row_parts[idx] if idx < len(row_parts) else ""
+            row_dict[h] = val
+            norm = _normalize_header(h)
+            if norm not in row_dict:
+                row_dict[norm] = val
+        records.append(DynamicObj(row_dict))
+    return records
+
+
+class CommandStream:
+    """Provides real-time line-by-line streaming of a running command's stdout."""
+
+    def __init__(
+        self,
+        proc: subprocess.Popen,
+        command: str,
+        start_time: float,
+        *,
+        original_expression: str | None = None,
+        check: bool = False,
+    ) -> None:
+        self.proc = proc
+        self.command = command
+        self.start_time = start_time
+        self.original_expression = original_expression
+        self.check = check
+        self._consumed = False
+        self._exit_code: int | None = None
+
+    def __iter__(self) -> Iterator[str]:
+        if self._consumed:
+            raise RuntimeError("CommandStream can only be iterated once.")
+        self._consumed = True
+        try:
+            if self.proc.stdout:
+                for line in iter(self.proc.stdout.readline, ""):
+                    yield line.rstrip("\r\n")
+            self.proc.wait()
+            self._exit_code = self.proc.returncode
+            if self.check and self._exit_code != 0:
+                duration = time.perf_counter() - self.start_time
+                res = CommandResult(
+                    command=self.command,
+                    stdout="",
+                    stderr="",
+                    exit_code=self._exit_code,
+                    duration=duration,
+                    original_expression=self.original_expression,
+                )
+                raise CommandError(res)
+        finally:
+            if self.proc.poll() is None:
+                _kill_process_tree(self.proc)
+
+    @property
+    def exit_code(self) -> int | None:
+        return self._exit_code
+
+
 class CommandResult:
     """The result of executing a shell command via pycli."""
 
@@ -203,6 +344,7 @@ class CommandResult:
         *,
         original_expression: str | None = None,
         truncated: bool = False,
+        rerun_fn: Callable[[], CommandResult] | None = None,
     ) -> None:
         self.command = command
         self.stdout = stdout
@@ -211,10 +353,13 @@ class CommandResult:
         self.duration = duration
         self.original_expression = original_expression
         self.truncated = truncated
+        self._rerun_fn = rerun_fn
         self._parsed_json: Any = None
         self._json_parsed = False
         self._parsed_yaml: Any = None
         self._yaml_parsed = False
+        self._parsed_table: list[DynamicObj] | None = None
+        self._table_parsed = False
 
     def __bool__(self) -> bool:
         """Command results evaluate according to exit code (0 -> True, non-zero -> False)."""
@@ -268,6 +413,77 @@ class CommandResult:
             self._parsed_yaml = wrap_json(raw)
             self._yaml_parsed = True
         return self._parsed_yaml
+
+    @property
+    def table(self) -> list[DynamicObj]:
+        """Parse tabular/columnar stdout into a list of DynamicObj records.
+
+        Automatically recognizes column headers (e.g. from kubectl, docker ps, ps, df)
+        and provides attribute-based access (row.name, row.status, etc.).
+        """
+        if not self._table_parsed:
+            self._parsed_table = parse_table(self.stdout)
+            self._table_parsed = True
+        return self._parsed_table or []
+
+    @property
+    def stream(self) -> Iterator[str]:
+        """Yield lines from stdout as a stream generator."""
+        return iter(self.lines)
+
+    def retry(
+        self,
+        attempts: int = 3,
+        delay: float = 1.0,
+        backoff: float = 1.0,
+        check: bool = False,
+    ) -> CommandResult:
+        """Retry command execution up to `attempts` times if exit_code is non-zero."""
+        if self.exit_code == 0 or attempts <= 1:
+            if check and self.exit_code != 0:
+                raise CommandError(self)
+            return self
+
+        current_res = self
+        current_delay = delay
+        for _ in range(1, attempts):
+            time.sleep(current_delay)
+            current_delay *= backoff
+            if self._rerun_fn:
+                current_res = self._rerun_fn()
+            else:
+                current_res = run(self.command, capture=True, suppress_errors=True)
+            if current_res.exit_code == 0:
+                return current_res
+
+        if check and current_res.exit_code != 0:
+            raise CommandError(current_res)
+        return current_res
+
+    def until(
+        self,
+        predicate: Callable[[CommandResult], bool],
+        timeout: float = 60.0,
+        delay: float = 1.0,
+    ) -> CommandResult:
+        """Poll command execution until predicate(result) returns True or timeout is reached."""
+        if predicate(self):
+            return self
+
+        start_time = time.perf_counter()
+        current_res = self
+        while (time.perf_counter() - start_time) < timeout:
+            time.sleep(delay)
+            if self._rerun_fn:
+                current_res = self._rerun_fn()
+            else:
+                current_res = run(self.command, capture=True, suppress_errors=True)
+            if predicate(current_res):
+                return current_res
+
+        raise TimeoutError(
+            f"Command {self.command!r} did not satisfy predicate within {timeout}s (last exit code: {current_res.exit_code})"
+        )
 
     def __str__(self) -> str:
         return self.stdout
@@ -440,6 +656,7 @@ def run(
     capture: bool = True,
     check: bool = False,
     tee: bool = False,
+    stream: bool = False,
     input: str | bytes | None = None,
     suppress_errors: bool = False,
     shell: bool | None = None,
@@ -449,7 +666,7 @@ def run(
     encoding: str = "utf-8",
     max_output_bytes: int | None = None,
     original_expression: str | None = None,
-) -> CommandResult:
+) -> CommandResult | CommandStream:
     """Execute a shell command and return a CommandResult.
 
     Args:
@@ -484,6 +701,61 @@ def run(
     start = time.perf_counter()
     if original_expression is None:
         original_expression = _current_expression.get()
+
+    is_dry_run = _dry_run_active.get() or os.environ.get("SPY_DRY_RUN", "").lower() in ("1", "true", "yes")
+    if is_dry_run:
+        sys.stdout.write(f"\033[93m[DRY-RUN]\033[0m \033[96m$({cmd_str})\033[0m\n")
+        sys.stdout.flush()
+        if stream:
+            return iter([])  # type: ignore
+        return CommandResult(
+            command=cmd_str,
+            stdout="",
+            stderr="",
+            exit_code=0,
+            duration=0.0,
+            original_expression=original_expression,
+        )
+
+    if stream:
+        proc = subprocess.Popen(
+            command,
+            shell=shell,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if not tee else None,
+            cwd=cwd_str,
+            env=env_dict,
+            text=True,
+            encoding=encoding,
+            errors="replace",
+        )
+        return CommandStream(
+            proc,
+            command=cmd_str,
+            start_time=start,
+            original_expression=original_expression,
+            check=check and not suppress_errors,
+        )
+
+    def _make_rerun():
+        return lambda: run(
+            command,
+            shell=shell,
+            capture=capture,
+            tee=tee,
+            stream=False,
+            check=False,
+            suppress_errors=True,
+            cwd=cwd,
+            env=env,
+            timeout=timeout,
+            encoding=encoding,
+            max_output_bytes=max_output_bytes,
+            input=input,
+            original_expression=original_expression,
+        )
+
+    _rerun = _make_rerun()
 
     if not capture and not tee and input_text is None:
         # Native direct passthrough streaming without buffering
@@ -532,6 +804,7 @@ def run(
             exit_code=proc.returncode if proc.returncode is not None else 0,
             duration=duration,
             original_expression=original_expression,
+            rerun_fn=_rerun,
         )
 
     elif tee:
@@ -618,6 +891,7 @@ def run(
             duration=duration,
             original_expression=original_expression,
             truncated=(out_trunc or err_trunc),
+            rerun_fn=_rerun,
         )
 
     else:
@@ -684,6 +958,7 @@ def run(
             duration=duration,
             original_expression=original_expression,
             truncated=(out_trunc or err_trunc),
+            rerun_fn=_rerun,
         )
 
     if check and not suppress_errors and result.exit_code != 0:
@@ -779,6 +1054,7 @@ def _execute_pipeline_stages(
     capture: bool,
     check: bool,
     tee: bool,
+    stream: bool = False,
     input: str | bytes | None,
     suppress_errors: bool,
     cwd: str | Path | None,
@@ -787,7 +1063,7 @@ def _execute_pipeline_stages(
     encoding: str,
     max_output_bytes: int | None,
     original_expression: str | None,
-) -> CommandResult:
+) -> CommandResult | CommandStream:
     opened_files: list[Any] = []
     processes: list[subprocess.Popen] = []
     start = time.perf_counter()
@@ -934,13 +1210,23 @@ def _execute_pipeline_stages(
                 t_err.start()
                 reader_threads.append(t_err)
 
-        # Concurrently drain stdout of the final process if piped
-        if processes and processes[-1].stdout is not None:
+        # Concurrently drain stdout of the final process if piped (unless streaming)
+        if not stream and processes and processes[-1].stdout is not None:
             t_out = threading.Thread(
                 target=_drain_stream, args=(processes[-1].stdout, stdout_chunks), daemon=True
             )
             t_out.start()
             reader_threads.append(t_out)
+
+        if stream:
+            last_proc = processes[-1]
+            return CommandStream(
+                last_proc,
+                command=full_cmd_str,
+                start_time=start,
+                original_expression=original_expression,
+                check=check and not suppress_errors,
+            )
 
         # Feed input to first stage if needed
         if input_text is not None and processes and processes[0].stdin is not None:
@@ -1080,6 +1366,7 @@ def run_expanded(
     capture: bool = True,
     check: bool = False,
     tee: bool = False,
+    stream: bool = False,
     input: str | bytes | None = None,
     suppress_errors: bool = False,
     shell: bool | None = None,
@@ -1089,7 +1376,7 @@ def run_expanded(
     encoding: str = "utf-8",
     max_output_bytes: int | None = None,
     original_expression: str | None = None,
-) -> CommandResult:
+) -> CommandResult | CommandStream:
     """Execute a command composed of multiple parts, supporting splat list expansion."""
     flat_parts: list[Any] = []
     for part in parts:
@@ -1098,6 +1385,23 @@ def run_expanded(
                 flat_parts.append(item)
         else:
             flat_parts.append(part)
+
+    is_dry_run = _dry_run_active.get() or os.environ.get("SPY_DRY_RUN", "").lower() in ("1", "true", "yes")
+    if is_dry_run:
+        cmd_tokens: list[str] = [str(p) if isinstance(p, ShellOp) else str(p) for p in flat_parts]
+        cmd_str = " ".join(cmd_tokens)
+        sys.stdout.write(f"\033[93m[DRY-RUN]\033[0m \033[96m$({cmd_str})\033[0m\n")
+        sys.stdout.flush()
+        if stream:
+            return iter([])  # type: ignore
+        return CommandResult(
+            command=cmd_str,
+            stdout="",
+            stderr="",
+            exit_code=0,
+            duration=0.0,
+            original_expression=original_expression,
+        )
 
     has_operator = any(isinstance(p, ShellOp) for p in flat_parts)
 
@@ -1108,7 +1412,7 @@ def run_expanded(
         )
 
     if shell is True:
-        cmd_tokens: list[str] = []
+        cmd_tokens = []
         for p in flat_parts:
             if isinstance(p, ShellOp):
                 cmd_tokens.append(str(p))
@@ -1120,6 +1424,7 @@ def run_expanded(
             capture=capture,
             check=check,
             tee=tee,
+            stream=stream,
             input=input,
             suppress_errors=suppress_errors,
             shell=True,
@@ -1137,6 +1442,8 @@ def run_expanded(
     if len(stages) == 1 and stages[0].stdin_file is None and stages[0].stdout_file is None:
         stage = stages[0]
         if not stage.argv:
+            if stream:
+                return iter([])  # type: ignore
             return CommandResult(
                 command="",
                 stdout="",
@@ -1149,6 +1456,8 @@ def run_expanded(
             start = time.perf_counter()
             echo_text = " ".join(stage.argv[1:]) + "\n"
             duration = time.perf_counter() - start
+            if stream:
+                return iter([echo_text.rstrip("\r\n")])  # type: ignore
             if tee:
                 sys.stdout.write(echo_text)
                 sys.stdout.flush()
@@ -1175,6 +1484,7 @@ def run_expanded(
             capture=capture,
             check=check,
             tee=tee,
+            stream=stream,
             input=input,
             suppress_errors=suppress_errors,
             shell=False,
@@ -1193,6 +1503,7 @@ def run_expanded(
         capture=capture,
         check=check,
         tee=tee,
+        stream=stream,
         input=input,
         suppress_errors=suppress_errors,
         cwd=cwd,

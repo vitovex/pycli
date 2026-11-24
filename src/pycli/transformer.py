@@ -82,8 +82,9 @@ class Transformer:
                 prev_text = output_chunks[-1] if output_chunks else ""
                 is_await = bool(re.search(r"\bawait\s+$", prev_text))
 
-                # Check if followed by chaining (.tee, .input(...)) without mutating tokens
+                # Check if followed by chaining (.tee, .stream, .input(...)) without mutating tokens
                 is_tee = False
+                is_stream = False
                 input_expr = None
                 if i + 1 < len(tokens) and tokens[i + 1].type == TokenType.PYTHON_CODE:
                     val = token_values.get(i + 1, tokens[i + 1].value)
@@ -91,6 +92,10 @@ class Transformer:
                         if val.startswith(".tee") and (len(val) == 4 or not (val[4].isalnum() or val[4] == "_")):
                             is_tee = True
                             val = val[4:]
+                            continue
+                        if val.startswith(".stream") and (len(val) == 7 or not (val[7].isalnum() or val[7] == "_")):
+                            is_stream = True
+                            val = val[7:]
                             continue
                         m_input = re.match(r"^\.input\s*\(", val)
                         if m_input:
@@ -108,6 +113,7 @@ class Transformer:
                 is_statement = (
                     self._is_statement_context(tokens, i, token_values)
                     and not is_tee
+                    and not is_stream
                     and not input_expr
                 )
                 parser = CommandParser(
@@ -124,6 +130,7 @@ class Transformer:
                     is_statement=is_statement,
                     is_async=is_await,
                     is_tee=is_tee,
+                    is_stream=is_stream,
                     input_expr=input_expr,
                 )
                 output_chunks.append(py_code)
@@ -314,6 +321,7 @@ class Transformer:
         is_statement: bool = False,
         is_async: bool = False,
         is_tee: bool = False,
+        is_stream: bool = False,
         input_expr: str | None = None,
     ) -> str:
         subcmd = self._find_subcommand(node)
@@ -332,6 +340,7 @@ class Transformer:
                     node,
                     is_statement=is_statement,
                     is_tee=is_tee,
+                    is_stream=is_stream,
                     input_expr=input_expr,
                     is_background=True,
                 )
@@ -350,6 +359,7 @@ class Transformer:
                     node,
                     is_statement=is_statement,
                     is_tee=is_tee,
+                    is_stream=is_stream,
                     input_expr=input_expr,
                     is_async=True,
                 )
@@ -362,10 +372,12 @@ class Transformer:
                     else self._format_literal_string(raw)
                 )
                 kwargs: list[str] = []
-                if is_statement and not is_tee:
+                if is_statement and not is_tee and not is_stream:
                     kwargs.append("capture=False")
                 if is_tee:
                     kwargs.append("tee=True")
+                if is_stream:
+                    kwargs.append("stream=True")
                 if input_expr is not None:
                     kwargs.append(f"input={input_expr}")
                 if node.strict:
@@ -380,6 +392,7 @@ class Transformer:
                 node,
                 is_statement=is_statement,
                 is_tee=is_tee,
+                is_stream=is_stream,
                 input_expr=input_expr,
             )
         elif not self.unsafe_interpolation and (
@@ -396,6 +409,7 @@ class Transformer:
                 node,
                 is_statement=is_statement,
                 is_tee=is_tee,
+                is_stream=is_stream,
                 input_expr=input_expr,
             )
         else:
@@ -404,6 +418,7 @@ class Transformer:
                 node,
                 is_statement=is_statement,
                 is_tee=is_tee,
+                is_stream=is_stream,
                 input_expr=input_expr,
             )
 
@@ -412,6 +427,7 @@ class Transformer:
         node: CommandExpressionNode,
         is_statement: bool = False,
         is_tee: bool = False,
+        is_stream: bool = False,
         input_expr: str | None = None,
     ) -> str:
         raw = node.raw
@@ -423,10 +439,12 @@ class Transformer:
             cmd_arg = self._format_fstring(raw)
 
         kwargs: list[str] = []
-        if is_statement and not is_tee:
+        if is_statement and not is_tee and not is_stream:
             kwargs.append("capture=False")
         if is_tee:
             kwargs.append("tee=True")
+        if is_stream:
+            kwargs.append("stream=True")
         if input_expr is not None:
             kwargs.append(f"input={input_expr}")
         if node.strict:
@@ -443,6 +461,7 @@ class Transformer:
         node: CommandExpressionNode,
         is_statement: bool = False,
         is_tee: bool = False,
+        is_stream: bool = False,
         input_expr: str | None = None,
         is_async: bool = False,
         is_background: bool = False,
@@ -567,10 +586,12 @@ class Transformer:
             fn_name = "run_expanded"
             self.used_symbols.add("run_expanded")
 
-        if is_statement and not is_tee:
+        if is_statement and not is_tee and not is_stream:
             args.append("capture=False")
         if is_tee:
             args.append("tee=True")
+        if is_stream:
+            args.append("stream=True")
         if input_expr is not None:
             args.append(f"input={input_expr}")
         if node.strict:

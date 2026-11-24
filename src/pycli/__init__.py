@@ -339,6 +339,12 @@ def main(argv: list[str] | None = None) -> None:
         default=False,
         help="Warn about executing untrusted scripts with user privileges",
     )
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Simulate execution without running subprocesses",
+    )
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to script")
 
     # If the first argument is a file ending in .spy, '-' or an existing file, default to run
@@ -376,6 +382,8 @@ def main(argv: list[str] | None = None) -> None:
                 sys.stdout.write(py_code)
 
     elif args.subcommand == "run":
+        if getattr(args, "dry_run", False):
+            os.environ["SPY_DRY_RUN"] = "1"
         is_stdin = args.file == "-"
         if not is_stdin and not Path(args.file).exists():
             sys.stderr.write(f"Error: file not found: {args.file}\n")
